@@ -78,11 +78,27 @@ def get_calendar_events(lookback: int = 3, lookahead: int = 7) -> str:
             event_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
 
             summary = event.get("summary", "No title")
-            category = extract_category(summary)
+            description = event.get("description", "")
+            location = event.get("location", "")
 
-            event_str = f"- {event_time.strftime('%Y-%m-%d %H:%M')}: {summary}"
+            category, clean_title = parse_event_title(summary)
+
+            # Build rich event string with all available data
+            event_str = f"- {event_time.strftime('%Y-%m-%d %H:%M')}: "
             if category:
-                event_str += f" [category: {category}]"
+                event_str += f"[{category}] "
+            event_str += clean_title
+
+            # Add location if present
+            if location:
+                event_str += f" @ {location}"
+
+            # Add description if present (truncate if too long)
+            if description:
+                desc_preview = (
+                    description[:100] + "..." if len(description) > 100 else description
+                )
+                event_str += f" | {desc_preview}"
 
             if event_time < now:
                 past_events.append(event_str)
@@ -104,20 +120,63 @@ def get_calendar_events(lookback: int = 3, lookahead: int = 7) -> str:
         return f"Error fetching calendar events: {str(e)}"
 
 
-def extract_category(title: str) -> str:
-    """Extract category tag from event title (e.g., 'Meeting category: work' -> 'work')."""
+def parse_event_title(title: str) -> tuple[str, str]:
+    """
+    Parse event title to extract category and event description.
+
+    Supports multiple formats (backward compatible):
+    - "CATEGORY: Event description" -> ("CATEGORY", "Event description")
+    - "category: Event description" -> ("category", "Event description")
+    - "Event description [category]" -> ("category", "Event description")
+    - "Event description category: tag" -> ("tag", "Event description")
+    - "Event description" -> ("", "Event description")
+
+    Args:
+        title: Event title string
+
+    Returns:
+        Tuple of (category, description)
+    """
     import re
 
-    match = re.search(r"category:\s*(\S+)", title, re.IGNORECASE)
-    return match.group(1) if match else ""
+    if not title:
+        return ("", "No title")
+
+    # Format 1: "CATEGORY: Description" (primary format)
+    # Match word characters at start, followed by colon
+    match = re.match(r"^([A-Za-z0-9_-]+):\s*(.+)$", title)
+    if match:
+        return (match.group(1), match.group(2).strip())
+
+    # Format 2: "Description category: tag" (backward compatible)
+    match = re.search(r"\bcategory:\s*(\S+)", title, re.IGNORECASE)
+    if match:
+        category = match.group(1)
+        # Remove the category tag from description
+        description = re.sub(
+            r"\s*\bcategory:\s*\S+", "", title, flags=re.IGNORECASE
+        ).strip()
+        return (category, description)
+
+    # Format 3: "Description [category]" (backward compatible)
+    match = re.search(r"\[([^\]]+)\]", title)
+    if match:
+        category = match.group(1)
+        # Remove the bracket tag from description
+        description = re.sub(r"\s*\[[^\]]+\]", "", title).strip()
+        return (category, description)
+
+    # No category found
+    return ("", title)
 
 
 def get_todoist_tasks() -> str:
     """
-    Fetch Todoist tasks and categorize them as Urgent or Backlog.
+    Fetch Todoist tasks with rich context including labels, priority, and project info.
+    Categorizes as Urgent (due today/overdue) or Backlog (future/no due date).
 
     Returns:
-        Formatted text summary of tasks
+        Formatted text summary of tasks with all available metadata
     """
     try:
         api_key = os.getenv("TODOIST_API_KEY")
@@ -135,19 +194,45 @@ def get_todoist_tasks() -> str:
         backlog_tasks = []
 
         for task in tasks:
+            # Start with task content
             task_str = f"- {task.content}"
-            if task.description:
-                task_str += f" (Note: {task.description})"
 
+            # Add priority indicator (p1=highest, p4=lowest)
+            priority_map = {4: "🔴 P1", 3: "🟡 P2", 2: "🔵 P3", 1: "⚪ P4"}
+            if task.priority > 1:
+                task_str += f" [{priority_map.get(task.priority, '')}]"
+
+            # Add labels if present
+            if task.labels:
+                task_str += f" #{', #'.join(task.labels)}"
+
+            # Add description if present (truncate if too long)
+            if task.description:
+                desc_preview = (
+                    task.description[:80] + "..."
+                    if len(task.description) > 80
+                    else task.description
+                )
+                task_str += f" | {desc_preview}"
+
+            # Add due date info
             if task.due:
                 due_date = datetime.fromisoformat(task.due.date).date()
-                task_str += f" [Due: {task.due.date}]"
+                days_until = (due_date - today).days
+
+                if days_until < 0:
+                    task_str += f" [⚠️ OVERDUE by {abs(days_until)} days]"
+                elif days_until == 0:
+                    task_str += " [📅 Due TODAY]"
+                else:
+                    task_str += f" [Due: {task.due.date}]"
 
                 if due_date <= today:
                     urgent_tasks.append(task_str)
                 else:
                     backlog_tasks.append(task_str)
             else:
+                task_str += " [No due date]"
                 backlog_tasks.append(task_str)
 
         result = []
