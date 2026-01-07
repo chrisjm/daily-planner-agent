@@ -41,29 +41,60 @@ def strategist(state: AgentState) -> AgentState:
 
     llm = ChatGoogleGenerativeAI(model=STRATEGIST_MODEL, api_key=GOOGLE_API_KEY)
 
-    clarifications = "\n".join(
-        [m.content for m in state["messages"] if isinstance(m, HumanMessage)]
+    conversation_history = "\n".join(
+        [
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+            for m in state["messages"]
+        ]
     )
+    if not conversation_history:
+        conversation_history = "(No previous conversation)"
 
     prompt = STRATEGIST_PROMPT.format(
         user_intent=state["user_intent"],
         calendar_context=state["calendar_context"],
         todo_context=state["todo_context"],
-        clarifications=clarifications,
+        conversation_history=conversation_history,
     )
 
     response = llm.invoke([HumanMessage(content=prompt)])
 
+    print("📝 Raw strategist response (first 500 chars):")
+    print(f"   {response.content[:500]}")
+    print(f"   Response type: {type(response.content)}")
+    print(f"   Response length: {len(response.content)} chars")
+
     try:
-        result = json.loads(response.content)
+        # Try to extract JSON from markdown code blocks if present
+        content = response.content.strip()
+        if content.startswith("```"):
+            # Extract JSON from code block
+            lines = content.split("\n")
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith("```"):
+                    in_code_block = not in_code_block
+                    continue
+                if in_code_block:
+                    json_lines.append(line)
+            content = "\n".join(json_lines)
+            print(f"   Extracted from code block: {content[:200]}")
+
+        result = json.loads(content)
         confidence = float(result.get("confidence", 0.0))
         analysis = result.get("analysis", "")
         missing_info = result.get("missing_info", "")
+        print("✅ Successfully parsed JSON")
     except (json.JSONDecodeError, ValueError) as e:
         print(f"⚠️  Error parsing strategist response: {e}")
+        print("   Full response content:")
+        print(f"   {response.content}")
         confidence = 0.5
         analysis = response.content
-        missing_info = "Unable to parse strategist output"
+        missing_info = (
+            "Unable to parse strategist output - LLM did not return valid JSON"
+        )
 
     print(f"   Confidence: {confidence:.2f}")
 
@@ -72,6 +103,7 @@ def strategist(state: AgentState) -> AgentState:
         "confidence": confidence,
         "analysis": analysis,
         "missing_info": missing_info,
+        "raw_strategist_response": response.content,
     }
 
 
@@ -93,8 +125,19 @@ def ask_clarification(state: AgentState) -> AgentState:
 
     llm = ChatGoogleGenerativeAI(model=CLARIFICATION_MODEL, api_key=GOOGLE_API_KEY)
 
+    conversation_history = "\n".join(
+        [
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+            for m in state["messages"]
+        ]
+    )
+    if not conversation_history:
+        conversation_history = "(No previous conversation)"
+
     prompt = CLARIFICATION_PROMPT.format(
-        missing_info=state["missing_info"], user_intent=state["user_intent"]
+        missing_info=state["missing_info"],
+        user_intent=state["user_intent"],
+        conversation_history=conversation_history,
     )
 
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -126,10 +169,13 @@ def planner(state: AgentState) -> AgentState:
         conversation_history=conversation_history,
     )
 
+    print(f"   Using analysis: {state['analysis'][:200]}...")
+    print(f"   Confidence was: {state.get('confidence', 0.0):.2f}")
+
     response = llm.invoke([HumanMessage(content=prompt)])
     schedule = response.content
 
-    print("✅ Schedule generated")
+    print(f"✅ Schedule generated ({len(schedule)} chars)")
 
     return {
         **state,

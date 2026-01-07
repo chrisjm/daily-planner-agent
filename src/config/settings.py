@@ -10,7 +10,7 @@ LOOKBACK_DAYS = 3
 LOOKAHEAD_DAYS = 7
 
 # Agent confidence threshold
-CONFIDENCE_THRESHOLD = 0.95
+CONFIDENCE_THRESHOLD = 0.75
 
 # LLM model names
 STRATEGIST_MODEL = "gemini-2.5-pro"  # Latest Pro model for reasoning

@@ -29,6 +29,8 @@ def run_app():
             "confidence": 0.0,
             "missing_info": "",
             "final_schedule": "",
+            "debug_info": "",
+            "raw_strategist_response": "",
         }
 
     if "conversation_started" not in st.session_state:
@@ -37,8 +39,8 @@ def run_app():
     if "waiting_for_clarification" not in st.session_state:
         st.session_state.waiting_for_clarification = False
 
-    # Sidebar with context
-    st.sidebar.header("📊 Context")
+    # Sidebar with context and thought processes
+    st.sidebar.header("📊 Context & Thought Process")
     with st.sidebar:
         if st.session_state.state.get("calendar_context"):
             with st.expander("📅 Calendar Context", expanded=False):
@@ -49,12 +51,43 @@ def run_app():
                 st.text(st.session_state.state["todo_context"])
 
         if st.session_state.state.get("analysis"):
-            with st.expander("🧠 Strategic Analysis", expanded=False):
+            with st.expander("🧠 Strategic Analysis", expanded=True):
+                st.markdown("**Strategist Reasoning:**")
                 st.text(st.session_state.state["analysis"])
-                st.metric(
-                    "Confidence",
-                    f"{st.session_state.state.get('confidence', 0.0):.2%}",
+
+                confidence = st.session_state.state.get("confidence", 0.0)
+                st.metric("Confidence Score", f"{confidence:.2%}")
+
+                if confidence < 0.75:
+                    st.warning("⚠️ Below threshold (0.75) - requesting clarification")
+                else:
+                    st.success("✅ Above threshold - proceeding to planning")
+
+                if st.session_state.state.get("missing_info"):
+                    st.markdown("**Missing Information:**")
+                    st.info(st.session_state.state["missing_info"])
+
+        if st.session_state.state.get("raw_strategist_response"):
+            with st.expander("🔍 Debug: Raw Strategist Response", expanded=False):
+                st.markdown("**Raw LLM Output:**")
+                st.code(
+                    st.session_state.state["raw_strategist_response"], language="json"
                 )
+
+                st.markdown("**Response Analysis:**")
+                raw_resp = st.session_state.state["raw_strategist_response"]
+                st.text(f"Length: {len(raw_resp)} chars")
+                st.text(f"Starts with: {raw_resp[:50]}")
+                st.text(f"Ends with: {raw_resp[-50:]}")
+
+                if raw_resp.strip().startswith("```"):
+                    st.info("✅ Response is wrapped in markdown code block")
+                elif raw_resp.strip().startswith("{"):
+                    st.info("✅ Response starts with JSON object")
+                else:
+                    st.error(
+                        "⚠️ Response doesn't look like JSON or markdown-wrapped JSON"
+                    )
 
     # Main layout
     col1, col2 = st.columns([2, 1])
@@ -136,6 +169,8 @@ def run_app():
                 "confidence": 0.0,
                 "missing_info": "",
                 "final_schedule": "",
+                "debug_info": "",
+                "raw_strategist_response": "",
             }
             st.session_state.conversation_started = False
             st.session_state.waiting_for_clarification = False

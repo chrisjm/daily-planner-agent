@@ -16,3 +16,5 @@ class AgentState(TypedDict):
     confidence: float
     missing_info: str
     final_schedule: str
+    debug_info: str
+    raw_strategist_response: str
