@@ -5,7 +5,7 @@ An AI-powered daily planning consultant that autonomously gathers your schedule 
 ## Features
 
 - **Smart Context Gathering**: Automatically fetches events from Google Calendar and tasks from Todoist
-- **Strategic Analysis**: Uses Gemini 1.5 Pro to analyze momentum (past events) vs constraints (future events) vs intent (your goals)
+- **Strategic Analysis**: Uses Gemini 2.5 Pro to analyze momentum (past events) vs constraints (future events) vs intent (your goals)
 - **Confidence-Based Clarification**: Only asks questions when confidence is below 95%
 - **Interactive Planning**: Streamlit UI for conversational planning experience
 - **LangGraph State Machine**: Robust workflow orchestration with conditional routing
@@ -25,10 +25,10 @@ Gather Context → Strategist → Check Confidence → [Ask Clarification OR Pla
 ### Nodes
 
 1. **gather_context**: Parallel fetch from Google Calendar (past 3 days + future 7 days) and Todoist
-2. **strategist**: Analyzes context with Gemini 1.5 Pro, outputs confidence score
+2. **strategist**: Analyzes context with Gemini 2.5 Pro, outputs confidence score
 3. **check_confidence**: Routes based on 0.95 threshold
 4. **ask_clarification**: Generates specific question using Gemini 2.0 Flash
-5. **planner**: Creates final Markdown schedule with Gemini 1.5 Pro
+5. **planner**: Creates final Markdown schedule with Gemini 2.5 Pro
 
 ## Setup
 
@@ -121,15 +121,27 @@ uv run python graph.py
 
 ```
 daily-planner-agent/
-├── app.py              # Streamlit UI
-├── graph.py            # LangGraph state machine
-├── tools.py            # Calendar & Todoist integration
-├── .env                # Environment variables (gitignored)
-├── .env.example        # Template for environment setup
-├── credentials.json    # Google OAuth credentials (gitignored)
-├── token.pickle        # OAuth token cache (gitignored)
-├── pyproject.toml      # Dependencies
-└── README.md           # This file
+├── src/
+│   ├── agent/
+│   │   ├── state.py       # AgentState TypedDict
+│   │   ├── prompts.py     # LLM prompts
+│   │   ├── nodes.py       # Node functions
+│   │   └── graph.py       # LangGraph construction
+│   ├── integrations/
+│   │   ├── calendar.py    # Google Calendar API
+│   │   ├── todoist.py     # Todoist API
+│   │   └── parsers.py     # Event/task parsing
+│   ├── config/
+│   │   └── settings.py    # Configuration constants
+│   └── ui/
+│       └── streamlit_app.py  # Streamlit interface
+├── app.py                 # Entry point
+├── .env                   # Environment variables (gitignored)
+├── .env.example           # Template for environment setup
+├── credentials.json       # Google OAuth credentials (gitignored)
+├── token.pickle           # OAuth token cache (gitignored)
+├── pyproject.toml         # Dependencies
+└── README.md              # This file
 ```
 
 ## How It Works
@@ -149,7 +161,7 @@ daily-planner-agent/
 
 ### LLM Strategy
 
-**Strategist** (Gemini 1.5 Pro):
+**Strategist** (Gemini 2.5 Pro):
 
 - Analyzes momentum vs constraints vs intent
 - Returns JSON with confidence score (0.0-1.0)
@@ -160,7 +172,7 @@ daily-planner-agent/
 - Generates single specific question
 - Fast routing and parsing
 
-**Planner** (Gemini 1.5 Pro):
+**Planner** (Gemini 2.5 Pro):
 
 - Creates detailed Markdown schedule
 - Balances energy, respects constraints
@@ -168,35 +180,27 @@ daily-planner-agent/
 
 ## Customization
 
-### Adjust Time Windows
+### Adjust Configuration
 
-Edit `tools.py`:
-
-```python
-def gather_all_context(lookback: int = 3, lookahead: int = 7):
-    # Change lookback/lookahead values
-```
-
-### Modify Confidence Threshold
-
-Edit `graph.py`:
+Edit `src/config/settings.py`:
 
 ```python
-def check_confidence(state: AgentState) -> str:
-    if confidence >= 0.95:  # Adjust threshold here
-        return "planner"
+# Calendar settings
+LOOKBACK_DAYS = 3  # Change lookback window
+LOOKAHEAD_DAYS = 7  # Change lookahead window
+
+# Agent confidence threshold
+CONFIDENCE_THRESHOLD = 0.95  # Adjust threshold
+
+# LLM model names
+STRATEGIST_MODEL = "gemini-2.5-pro"
+CLARIFICATION_MODEL = "gemini-2.0-flash-exp"
+PLANNER_MODEL = "gemini-2.5-pro"
 ```
 
-### Change LLM Models
+### Modify Prompts
 
-Edit `graph.py`:
-
-```python
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro",  # Try: gemini-2.0-flash-exp, etc.
-    api_key=os.getenv("GOOGLE_API_KEY")
-)
-```
+Edit `src/agent/prompts.py` to customize LLM prompts for strategist, clarification, and planner nodes.
 
 ## Troubleshooting
 
@@ -224,7 +228,7 @@ uv sync
 
 - **Package Manager**: `uv`
 - **Orchestration**: `LangGraph`
-- **LLMs**: Google Gemini (1.5 Pro + 2.0 Flash)
+- **LLMs**: Google Gemini (2.5 Pro + 2.0 Flash)
 - **UI**: Streamlit
 - **APIs**: Google Calendar API, Todoist API
 

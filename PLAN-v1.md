@@ -7,7 +7,7 @@
 - **Manager:** `uv` (Python 3.10+)
 - **Orchestration:** `LangGraph`
 - **LLMs:**
-- **Reasoning (Strategist/Planner):** `gemini-1.5-pro`
+- **Reasoning (Strategist/Planner):** `gemini-2.5-pro`
 - **Speed (Router/Parsing):** `gemini-2.0-flash`
 
 - **Env:** `.env` (Keys: `GOOGLE_API_KEY`, `TODOIST_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`)
@@ -20,14 +20,14 @@
 The graph operates as a loop: **Gather -> Strategize -> Check Confidence -> (Loop or Finalize)**.
 
 1. **`gather_context`**: Parallel tool calls to Calendar (Past/Future) & Todoist.
-2. **`strategist`**: (`gemini-1.5-pro`) Analyzes "Momentum" (Past) vs. "Constraints" (Future) vs. "Intent" (User Query). Outputs JSON `confidence` score.
+2. **`strategist`**: (`gemini-2.5-pro`) Analyzes "Momentum" (Past) vs. "Constraints" (Future) vs. "Intent" (User Query). Outputs JSON `confidence` score.
 3. **`check_confidence`**:
 
 - **< 0.95**: Route to `ask_clarification`.
 - **>= 0.95**: Route to `planner`.
 
 4. **`ask_clarification`**: (`gemini-2.0-flash`) Generates single specific question -> Updates State -> Loops back to `strategist`.
-5. **`planner`**: (`gemini-1.5-pro`) Generates final Markdown schedule.
+5. **`planner`**: (`gemini-2.0-pro`) Generates final Markdown schedule.
 
 ---
 
@@ -75,7 +75,7 @@ class AgentState(TypedDict):
 
 #### **C. LLM Strategy**
 
-- **Strategist Node Prompt (`gemini-1.5-pro`):**
+- **Strategist Node Prompt (`gemini-2.5-pro`):**
 
   > "You are an Executive Strategist. Analyze the `user_intent` against `calendar_context` (hard constraints) and `todo_context`. Identify if the user's request conflicts with reality. Return JSON: `{'confidence': float, 'analysis': str, 'missing_info': str}`."
 

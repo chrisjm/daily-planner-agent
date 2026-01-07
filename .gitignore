@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -15,3 +18,6 @@ wheels/
 # Google OAuth
 credentials.json
 token.pickle
+
+# Old files (backup)
+*_old.py
