@@ -180,5 +180,5 @@ def planner(state: AgentState) -> AgentState:
     return {
         **state,
         "final_schedule": schedule,
-        "messages": [AIMessage(content=schedule)],
+        "messages": state["messages"] + [AIMessage(content=schedule)],
     }

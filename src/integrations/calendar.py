@@ -12,7 +12,6 @@ from ..config.settings import (
     CALENDAR_SCOPES,
     TOKEN_PICKLE_PATH,
     GOOGLE_APPLICATION_CREDENTIALS,
-    EVENT_DESCRIPTION_MAX_LENGTH,
     LOOKBACK_DAYS,
     LOOKAHEAD_DAYS,
     OAUTH_REDIRECT_PORT,
@@ -198,8 +197,13 @@ def get_calendar_events(
                     )
 
                 summary = event.get("summary", "No title")
-                description = event.get("description", "")
                 location = event.get("location", "")
+
+                # Get end time for duration calculation
+                end = event["end"].get("dateTime", event["end"].get("date"))
+                end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                if end_time.tzinfo is None:
+                    end_time = end_time.replace(tzinfo=timezone.utc)
 
                 _logger.debug(
                     f"Processing event {idx + 1}/{len(events)}",
@@ -208,7 +212,6 @@ def get_calendar_events(
                     event_time_str=event_time.isoformat(),
                     event_time_tzinfo=str(event_time.tzinfo),
                     now_tzinfo=str(now.tzinfo),
-                    has_description=bool(description),
                     has_location=bool(location),
                 )
 
@@ -231,8 +234,11 @@ def get_calendar_events(
                 )
                 continue
 
-            # Build rich event string with all available data
-            event_str = f"- {event_time.strftime('%Y-%m-%d %H:%M')}: "
+            # Build rich event string with time range and location
+            duration = end_time - event_time
+            duration_mins = int(duration.total_seconds() / 60)
+
+            event_str = f"- {event_time.strftime('%Y-%m-%d %H:%M')}-{end_time.strftime('%H:%M')} ({duration_mins}min): "
             if category:
                 event_str += f"[{category}] "
             event_str += clean_title
@@ -240,15 +246,6 @@ def get_calendar_events(
             # Add location if present
             if location:
                 event_str += f" @ {location}"
-
-            # Add description if present (truncate if too long)
-            if description:
-                desc_preview = (
-                    description[:EVENT_DESCRIPTION_MAX_LENGTH] + "..."
-                    if len(description) > EVENT_DESCRIPTION_MAX_LENGTH
-                    else description
-                )
-                event_str += f" | {desc_preview}"
 
             # Categorize as past or future with detailed logging on comparison
             try:

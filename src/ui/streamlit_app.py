@@ -1,6 +1,7 @@
 """Streamlit UI for Executive Function Agent."""
 
 import streamlit as st
+import markdown
 from langchain_core.messages import HumanMessage, AIMessage
 
 from ..agent import create_graph
@@ -16,6 +17,11 @@ def run_app():
     st.markdown("*Your AI consultant for strategic daily planning*")
 
     # Initialize session state
+    if "thread_id" not in st.session_state:
+        import uuid
+
+        st.session_state.thread_id = str(uuid.uuid4())
+
     if "graph" not in st.session_state:
         st.session_state.graph = create_graph()
 
@@ -44,16 +50,27 @@ def run_app():
     with st.sidebar:
         if st.session_state.state.get("calendar_context"):
             with st.expander("📅 Calendar Context", expanded=False):
-                st.text(st.session_state.state["calendar_context"])
+                html_content = markdown.markdown(
+                    st.session_state.state["calendar_context"],
+                    extensions=["extra", "nl2br"],
+                )
+                st.markdown(html_content, unsafe_allow_html=True)
 
         if st.session_state.state.get("todo_context"):
             with st.expander("✅ Todo Context", expanded=False):
-                st.text(st.session_state.state["todo_context"])
+                html_content = markdown.markdown(
+                    st.session_state.state["todo_context"],
+                    extensions=["extra", "nl2br"],
+                )
+                st.markdown(html_content, unsafe_allow_html=True)
 
         if st.session_state.state.get("analysis"):
             with st.expander("🧠 Strategic Analysis", expanded=True):
                 st.markdown("**Strategist Reasoning:**")
-                st.text(st.session_state.state["analysis"])
+                html_content = markdown.markdown(
+                    st.session_state.state["analysis"], extensions=["extra", "nl2br"]
+                )
+                st.markdown(html_content, unsafe_allow_html=True)
 
                 confidence = st.session_state.state.get("confidence", 0.0)
                 st.metric("Confidence Score", f"{confidence:.2%}")
@@ -123,10 +140,20 @@ def run_app():
         if user_input:
             st.session_state.conversation_started = True
             st.session_state.state["user_intent"] = user_input
-            st.session_state.state["messages"].append(HumanMessage(content=user_input))
+
+            # Display user message immediately
+            with st.chat_message("user"):
+                st.markdown(user_input)
 
             with st.spinner("🔄 Gathering context and analyzing..."):
-                result = st.session_state.graph.invoke(st.session_state.state)
+                # Add user message to state for graph processing
+                result = st.session_state.graph.invoke(
+                    {
+                        **st.session_state.state,
+                        "messages": [HumanMessage(content=user_input)],
+                    },
+                    config={"configurable": {"thread_id": st.session_state.thread_id}},
+                )
                 st.session_state.state = result
 
                 if result.get("final_schedule"):
@@ -140,12 +167,19 @@ def run_app():
         clarification_input = st.chat_input("Please provide clarification...")
 
         if clarification_input:
-            st.session_state.state["messages"].append(
-                HumanMessage(content=clarification_input)
-            )
+            # Display user message immediately
+            with st.chat_message("user"):
+                st.markdown(clarification_input)
 
             with st.spinner("🔄 Re-analyzing with your clarification..."):
-                result = st.session_state.graph.invoke(st.session_state.state)
+                # Add clarification message to state for graph processing
+                result = st.session_state.graph.invoke(
+                    {
+                        **st.session_state.state,
+                        "messages": [HumanMessage(content=clarification_input)],
+                    },
+                    config={"configurable": {"thread_id": st.session_state.thread_id}},
+                )
                 st.session_state.state = result
 
                 if result.get("final_schedule"):
@@ -160,6 +194,8 @@ def run_app():
             "✅ Schedule generated! You can start a new conversation by refreshing the page."
         )
         if st.button("🔄 Start New Planning Session"):
+            import uuid
+
             st.session_state.state = {
                 "messages": [],
                 "calendar_context": "",
@@ -174,17 +210,8 @@ def run_app():
             }
             st.session_state.conversation_started = False
             st.session_state.waiting_for_clarification = False
+            st.session_state.thread_id = str(uuid.uuid4())
             st.rerun()
-
-    # Settings in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🔧 Settings")
-    st.sidebar.caption("Ensure your `.env` file contains:")
-    st.sidebar.code(
-        """GOOGLE_API_KEY=...
-TODOIST_API_KEY=...
-GOOGLE_APPLICATION_CREDENTIALS=..."""
-    )
 
 
 if __name__ == "__main__":

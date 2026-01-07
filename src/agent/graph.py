@@ -1,6 +1,7 @@
 """LangGraph state machine construction."""
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from .state import AgentState
 from .nodes import (
@@ -39,4 +40,6 @@ def create_graph():
     workflow.add_edge("ask_clarification", END)
     workflow.add_edge("planner", END)
 
-    return workflow.compile()
+    # Add memory checkpointer to preserve state across cycles
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
