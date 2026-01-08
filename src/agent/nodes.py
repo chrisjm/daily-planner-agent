@@ -26,23 +26,39 @@ from ..integrations.todoist import get_todoist_tasks
 
 def gather_context(state: AgentState) -> AgentState:
     """Node: Gather context from Calendar and Todoist."""
-    print("📊 Gathering context from Calendar and Todoist...")
+    current_cycle = state.get("cycle_count", 0) + 1
+    message_count = len(state.get("messages", []))
+    print(f"📊 Gathering context from Calendar and Todoist... (Cycle {current_cycle})")
+    print(f"   📨 Message count at entry: {message_count}")
 
     calendar_context = get_calendar_events(
         lookback=LOOKBACK_DAYS, lookahead=LOOKAHEAD_DAYS
     )
     todo_context = get_todoist_tasks()
 
-    return {
+    # On first cycle, add the user's initial message
+    # This prevents operator.add from duplicating it when passed in the initial state
+    result = {
         **state,
         "calendar_context": calendar_context,
         "todo_context": todo_context,
+        "cycle_count": current_cycle,
     }
+
+    if current_cycle == 1 and state.get("user_intent"):
+        from langchain_core.messages import HumanMessage
+
+        print("   📨 Adding initial user message on first cycle")
+        result["messages"] = [HumanMessage(content=state["user_intent"])]
+
+    return result
 
 
 def strategist(state: AgentState) -> AgentState:
     """Node: Analyze context and user intent, output confidence score."""
+    message_count = len(state.get("messages", []))
     print("🧠 Strategist analyzing context...")
+    print(f"   📨 Message count at entry: {message_count}")
 
     llm = ChatGoogleGenerativeAI(model=STRATEGIST_MODEL, api_key=GOOGLE_API_KEY)
 
@@ -115,18 +131,28 @@ def strategist(state: AgentState) -> AgentState:
 def check_confidence(state: AgentState) -> str:
     """Router: Check if confidence is high enough to proceed to planning."""
     confidence = state.get("confidence", 0.0)
+    clarification_count = state.get("clarification_count", 0)
+    max_clarifications = 2  # Limit to 2 clarification attempts
 
     if confidence >= CONFIDENCE_THRESHOLD:
         print("✅ Confidence high enough, proceeding to planner")
         return "planner"
+    elif clarification_count >= max_clarifications:
+        print(
+            f"⚠️  Max clarification attempts reached ({clarification_count}), forcing planner with confidence {confidence:.2f}"
+        )
+        return "planner"
     else:
-        print(f"❓ Confidence too low ({confidence:.2f}), asking for clarification")
+        print(
+            f"❓ Confidence too low ({confidence:.2f}), asking for clarification (attempt {clarification_count + 1}/{max_clarifications})"
+        )
         return "ask_clarification"
 
 
 def ask_clarification(state: AgentState) -> AgentState:
     """Node: Generate a clarification question based on missing_info."""
-    print("💬 Generating clarification question...")
+    cycle = state.get("cycle_count", 1)
+    print(f"💬 Generating clarification question... (Cycle {cycle})")
 
     llm = ChatGoogleGenerativeAI(model=CLARIFICATION_MODEL, api_key=GOOGLE_API_KEY)
 
@@ -150,12 +176,32 @@ def ask_clarification(state: AgentState) -> AgentState:
 
     print(f"   Question: {question}")
 
-    return {**state, "messages": [AIMessage(content=question)]}
+    # Increment clarification count
+    clarification_count = state.get("clarification_count", 0) + 1
+    message_count_before = len(state.get("messages", []))
+
+    # Only add message if this is the first time through this node (cycle 1)
+    # On subsequent cycles, the message is already in the state
+    if cycle == 1:
+        print(
+            f"   📨 Adding clarification message (count before: {message_count_before})"
+        )
+        return {
+            **state,
+            "messages": state.get("messages", []) + [AIMessage(content=question)],
+            "clarification_count": clarification_count,
+        }
+    else:
+        print(
+            f"   ⏭️  Skipping message addition (already added in cycle 1, count: {message_count_before})"
+        )
+        return {**state, "clarification_count": clarification_count}
 
 
 def planner(state: AgentState) -> AgentState:
     """Node: Generate final Markdown schedule."""
-    print("📅 Generating final schedule...")
+    cycle = state.get("cycle_count", 1)
+    print(f"📅 Generating final schedule... (Cycle {cycle})")
 
     llm = ChatGoogleGenerativeAI(model=PLANNER_MODEL, api_key=GOOGLE_API_KEY)
 
@@ -205,12 +251,23 @@ def planner(state: AgentState) -> AgentState:
         print(f"⚠️  Could not parse schedule JSON: {e}")
         schedule_json = []
 
-    return {
-        **state,
-        "final_schedule": markdown_schedule,
-        "schedule_json": schedule_json,
-        "messages": state["messages"] + [AIMessage(content=markdown_schedule)],
-    }
+    # Only add message if this is the first time through this node (cycle 1)
+    # On subsequent cycles, the message is already in the state
+    if cycle == 1:
+        return {
+            **state,
+            "final_schedule": markdown_schedule,
+            "schedule_json": schedule_json,
+            "messages": state.get("messages", [])
+            + [AIMessage(content=markdown_schedule)],
+        }
+    else:
+        print("   ⏭️  Skipping message addition (already added in cycle 1)")
+        return {
+            **state,
+            "final_schedule": markdown_schedule,
+            "schedule_json": schedule_json,
+        }
 
 
 def suggest_events(state: AgentState) -> AgentState:
@@ -348,11 +405,24 @@ def add_approved_events(state: AgentState) -> AgentState:
         lookback=LOOKBACK_DAYS, lookahead=LOOKAHEAD_DAYS
     )
 
-    return {
-        **state,
-        "calendar_context": updated_calendar_context,
-        "pending_calendar_additions": False,
-        "suggested_events": [],
-        "approved_event_ids": [],
-        "messages": state["messages"] + [AIMessage(content=message)],
-    }
+    cycle = state.get("cycle_count", 1)
+
+    # Only add message if this is the first time through this node
+    if cycle == 1:
+        return {
+            **state,
+            "calendar_context": updated_calendar_context,
+            "pending_calendar_additions": False,
+            "suggested_events": [],
+            "approved_event_ids": [],
+            "messages": state.get("messages", []) + [AIMessage(content=message)],
+        }
+    else:
+        print("   ⏭️  Skipping message addition (already added in cycle 1)")
+        return {
+            **state,
+            "calendar_context": updated_calendar_context,
+            "pending_calendar_additions": False,
+            "suggested_events": [],
+            "approved_event_ids": [],
+        }

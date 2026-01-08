@@ -41,6 +41,7 @@ def run_app():
             "suggested_events": [],
             "approved_event_ids": [],
             "pending_calendar_additions": False,
+            "cycle_count": 0,
         }
 
     if "conversation_started" not in st.session_state:
@@ -140,35 +141,24 @@ def run_app():
             with st.chat_message("user"):
                 st.markdown(user_input)
 
-            # Add user message to state for graph processing
-            # Only add if not already present to avoid duplicates
-            new_message = HumanMessage(content=user_input)
-            current_messages = st.session_state.state.get("messages", [])
-
-            # Check if this exact message is already in the list
-            if not any(
-                isinstance(m, HumanMessage) and m.content == user_input
-                for m in current_messages
-            ):
-                messages_to_send = current_messages + [new_message]
-            else:
-                messages_to_send = current_messages
-
             # Use status container for real-time observability
             with st.status("🔄 Processing your request...", expanded=True) as status:
                 st.write("📊 Gathering context from Calendar and Todoist...")
+                print("\n🔍 DEBUG: Starting graph.stream (initial request)")
 
                 # Stream graph execution to show progress
+                # Don't pass messages here - let gather_context add the user message
+                # This prevents operator.add from duplicating messages
                 final_result = None
                 for event in st.session_state.graph.stream(
-                    {
-                        **st.session_state.state,
-                        "messages": messages_to_send,
-                    },
+                    st.session_state.state,
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 ):
                     # event is a dict with node name as key
                     for node_name, node_output in event.items():
+                        print(
+                            f"🔍 DEBUG: Node '{node_name}' output has {len(node_output.get('messages', []))} messages"
+                        )
                         if node_name == "gather_context":
                             st.write("✅ Context gathered")
                             st.write("🧠 Analyzing with strategist...")
@@ -199,7 +189,13 @@ def run_app():
                 status.update(label="✅ Processing complete!", state="complete")
 
             # Update state only once after all streaming completes
+            print(
+                f"🔍 DEBUG: Final result has {len(final_result.get('messages', []))} messages"
+            )
             st.session_state.state = final_result
+            print(
+                f"🔍 DEBUG: Session state now has {len(st.session_state.state.get('messages', []))} messages"
+            )
 
             if final_result.get("final_schedule"):
                 st.session_state.waiting_for_clarification = False
@@ -223,28 +219,40 @@ def run_app():
                 st.markdown(clarification_input)
 
             with st.spinner("🔄 Re-analyzing with your clarification..."):
-                # Add clarification message to state for graph processing
-                # Only add if not already present to avoid duplicates
+                # Add clarification message directly to state
+                # Don't pass messages separately to avoid operator.add duplication
                 new_message = HumanMessage(content=clarification_input)
                 current_messages = st.session_state.state.get("messages", [])
+                print(
+                    f"\n🔍 DEBUG: Clarification cycle - current messages: {len(current_messages)}"
+                )
 
                 # Check if this exact message is already in the list
                 if not any(
                     isinstance(m, HumanMessage) and m.content == clarification_input
                     for m in current_messages
                 ):
-                    messages_to_send = current_messages + [new_message]
+                    # Add message directly to state, not as separate parameter
+                    st.session_state.state["messages"] = current_messages + [
+                        new_message
+                    ]
+                    print(
+                        f"🔍 DEBUG: Added clarification message to state, total: {len(st.session_state.state['messages'])}"
+                    )
                 else:
-                    messages_to_send = current_messages
+                    print("🔍 DEBUG: Clarification message already exists")
 
                 result = st.session_state.graph.invoke(
-                    {
-                        **st.session_state.state,
-                        "messages": messages_to_send,
-                    },
+                    st.session_state.state,
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 )
+                print(
+                    f"🔍 DEBUG: After invoke, result has {len(result.get('messages', []))} messages"
+                )
                 st.session_state.state = result
+                print(
+                    f"🔍 DEBUG: Session state now has {len(st.session_state.state.get('messages', []))} messages"
+                )
 
                 if result.get("final_schedule"):
                     st.session_state.waiting_for_clarification = False
@@ -372,6 +380,8 @@ def run_app():
                 "suggested_events": [],
                 "approved_event_ids": [],
                 "pending_calendar_additions": False,
+                "cycle_count": 0,
+                "clarification_count": 0,
             }
             st.session_state.conversation_started = False
             st.session_state.waiting_for_clarification = False
