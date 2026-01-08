@@ -109,22 +109,6 @@ def get_todoist_tasks() -> str:
                 # Add due date info
                 if task.due and task.due.date:
                     try:
-                        # Validate datetime parsing
-                        datetime_validation = _validator.validate_datetime_parsing(
-                            task.due.date
-                        )
-                        if not datetime_validation.valid:
-                            _logger.warning(
-                                "Failed to parse task due date",
-                                task_index=idx,
-                                task_id=task.id,
-                                due_date_value=task.due.date,
-                                errors=datetime_validation.errors,
-                            )
-                            task_str += " [Invalid due date]"
-                            backlog_tasks.append(task_str)
-                            continue
-
                         due_date = datetime.fromisoformat(task.due.date).date()
                         days_until = (due_date - today).days
 
@@ -139,15 +123,16 @@ def get_todoist_tasks() -> str:
                             urgent_tasks.append(task_str)
                         else:
                             backlog_tasks.append(task_str)
-                    except (ValueError, AttributeError) as e:
-                        _logger.warning(
-                            "Error parsing task due date",
+                    except (ValueError, AttributeError, TypeError) as e:
+                        # Date parsing failed - treat as backlog task with no date
+                        _logger.debug(
+                            "Could not parse task due date, treating as no due date",
                             task_index=idx,
                             task_id=task.id,
                             due_date_value=getattr(task.due, "date", None),
                             error=str(e),
                         )
-                        task_str += " [Invalid due date]"
+                        task_str += " [No due date]"
                         backlog_tasks.append(task_str)
                 else:
                     # No due date or due.date is None
@@ -155,16 +140,16 @@ def get_todoist_tasks() -> str:
                     backlog_tasks.append(task_str)
 
             except AttributeError as e:
-                _logger.error(
-                    "Missing required attribute in task",
+                _logger.debug(
+                    "Missing required attribute in task, skipping",
                     task_index=idx,
                     task_id=getattr(task, "id", "unknown"),
                     missing_attribute=str(e),
                 )
                 continue
             except Exception as e:
-                _logger.error(
-                    "Error processing task",
+                _logger.debug(
+                    "Error processing task, skipping",
                     task_index=idx,
                     task_id=getattr(task, "id", "unknown"),
                     error=str(e),

@@ -106,62 +106,68 @@ Create a schedule that follows these neurodivergent-friendly principles:
    - Build in flexibility for the unexpected
    - Celebrate small wins
 
-**Format Requirements**:
+**Output Format**:
+
+First, output a JSON array of scheduled time blocks (for calendar integration):
+```json
+[
+  {{
+    "start_time": "YYYY-MM-DD HH:MM",
+    "end_time": "YYYY-MM-DD HH:MM",
+    "title": "Task name",
+    "description": "Brief description",
+    "priority": "P1|P2|P3|P4"
+  }}
+]
+```
+
+Then output the schedule in clean Markdown format for display:
 - Use time blocks (e.g., "9:00 AM - 10:30 AM")
 - Include task priority indicators (🔴 P1, 🟡 P2, etc.)
 - Add brief rationale for scheduling decisions
 - Include energy level notes (e.g., "High energy window")
 - Suggest breaks and buffer time
 
-Generate the schedule in clean Markdown format:"""
+Generate both the JSON and Markdown schedule:"""
 
-SUGGEST_EVENTS_PROMPT = """You are an Event Suggestion Assistant specializing in neurodivergent-friendly scheduling. Analyze the final schedule and backlog tasks to suggest events that could be added to the user's calendar.
+SUGGEST_EVENTS_PROMPT = """You are an Event Suggestion Assistant. The planner has created a schedule with time blocks. Your job is to convert those scheduled time blocks into calendar event suggestions that the user can add to their Google Calendar.
 
-**Final Schedule:**
-{final_schedule}
+**Schedule JSON (Time Blocks from Planner):**
+{schedule_json}
 
 **Calendar Context (Existing Events):**
 {calendar_context}
 
-**Todo Context (Backlog Tasks):**
-{todo_context}
-
 **User Intent:**
 {user_intent}
 
-**Guidelines for Event Suggestions:**
+**Guidelines:**
 
-1. **Identify Time Gaps**: Look for unscheduled time blocks in the final schedule
-2. **Match Backlog Tasks**: Prioritize high-priority (P1, P2) backlog tasks without due dates
-3. **Respect Energy Patterns**: Suggest high-energy tasks during peak times, low-energy tasks during recovery periods
-4. **Avoid Conflicts**: DO NOT suggest events that overlap with existing calendar events
-5. **Be Realistic**: Consider cognitive load and don't over-schedule
-6. **Include Rationale**: Explain why each event fits this time slot
-
-**Duplicate Prevention:**
-- Check event titles against existing calendar events
-- Don't suggest events that are already scheduled
-- Don't suggest the same task multiple times
+1. **Convert Schedule to Events**: Take each time block from the schedule JSON and format it as a calendar event suggestion
+2. **Avoid Duplicates**: Check if similar events already exist in the calendar context
+3. **Preserve Details**: Keep the title, time, priority, and description from the schedule
+4. **Generate Unique IDs**: Create a unique ID for each event (e.g., "evt_1", "evt_2")
+5. **Add Rationale**: Explain that this is from the optimized schedule
 
 **Output Format:**
 Return ONLY a valid JSON array of suggested events. Each event must have this structure:
 [
   {{
     "id": "<unique_id>",
-    "title": "<event_title>",
-    "start_time": "<YYYY-MM-DD HH:MM>",
-    "end_time": "<YYYY-MM-DD HH:MM>",
-    "duration_minutes": <integer>,
-    "priority": "<P1|P2|P3|P4>",
-    "rationale": "<why this event fits here>",
-    "source_task": "<original task name from backlog, or 'New suggestion'>"
+    "title": "<event_title from schedule>",
+    "start_time": "<YYYY-MM-DD HH:MM from schedule>",
+    "end_time": "<YYYY-MM-DD HH:MM from schedule>",
+    "duration_minutes": <calculated from start/end>,
+    "priority": "<P1|P2|P3|P4 from schedule>",
+    "rationale": "From your optimized schedule",
+    "source_task": "Planned schedule"
   }}
 ]
 
 **Important:**
-- If there are no good time slots or no suitable backlog tasks, return an empty array: []
-- Maximum 5 suggestions to avoid overwhelming the user
-- Each suggestion should be actionable and specific
-- Include buffer time between events (don't pack schedule too tightly)
+- If the schedule JSON is empty, return an empty array: []
+- Convert ALL time blocks from the schedule into event suggestions
+- Maintain the exact times and details from the schedule
+- Each suggestion should match what was planned
 
-Generate the event suggestions:"""
+Generate the event suggestions from the schedule:"""

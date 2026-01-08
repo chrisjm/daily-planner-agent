@@ -113,30 +113,18 @@ def run_app():
                         "⚠️ Response doesn't look like JSON or markdown-wrapped JSON"
                     )
 
-    # Main layout
-    col1, col2 = st.columns([2, 1])
+    # Main conversation area
+    st.subheader("💬 Conversation")
 
-    with col1:
-        st.subheader("💬 Conversation")
-
-        chat_container = st.container()
-        with chat_container:
-            for msg in st.session_state.state["messages"]:
-                if isinstance(msg, HumanMessage):
-                    with st.chat_message("user"):
-                        st.markdown(msg.content)
-                elif isinstance(msg, AIMessage):
-                    with st.chat_message("assistant"):
-                        st.markdown(msg.content)
-
-    with col2:
-        st.subheader("📅 Final Schedule")
-        schedule_container = st.container()
-        with schedule_container:
-            if st.session_state.state.get("final_schedule"):
-                st.markdown(st.session_state.state["final_schedule"])
-            else:
-                st.info("Schedule will appear here once generated")
+    chat_container = st.container()
+    with chat_container:
+        for msg in st.session_state.state["messages"]:
+            if isinstance(msg, HumanMessage):
+                with st.chat_message("user"):
+                    st.markdown(msg.content)
+            elif isinstance(msg, AIMessage):
+                with st.chat_message("assistant"):
+                    st.markdown(msg.content)
 
     # Chat input handling
     if not st.session_state.conversation_started:
@@ -171,7 +159,7 @@ def run_app():
                 st.write("📊 Gathering context from Calendar and Todoist...")
 
                 # Stream graph execution to show progress
-                result = None
+                final_result = None
                 for event in st.session_state.graph.stream(
                     {
                         **st.session_state.state,
@@ -205,22 +193,24 @@ def run_app():
                             else:
                                 st.write("✅ No additional events to suggest")
 
-                        result = node_output
+                        # Keep the last output as final result
+                        final_result = node_output
 
                 status.update(label="✅ Processing complete!", state="complete")
 
-                st.session_state.state = result
+            # Update state only once after all streaming completes
+            st.session_state.state = final_result
 
-                if result.get("final_schedule"):
-                    st.session_state.waiting_for_clarification = False
-                    # Check if there are suggested events to show
-                    if (
-                        result.get("suggested_events")
-                        and len(result["suggested_events"]) > 0
-                    ):
-                        st.session_state.showing_event_suggestions = True
-                else:
-                    st.session_state.waiting_for_clarification = True
+            if final_result.get("final_schedule"):
+                st.session_state.waiting_for_clarification = False
+                # Check if there are suggested events to show
+                if (
+                    final_result.get("suggested_events")
+                    and len(final_result["suggested_events"]) > 0
+                ):
+                    st.session_state.showing_event_suggestions = True
+            else:
+                st.session_state.waiting_for_clarification = True
 
             st.rerun()
 
@@ -376,6 +366,7 @@ def run_app():
                 "confidence": 0.0,
                 "missing_info": "",
                 "final_schedule": "",
+                "schedule_json": [],
                 "debug_info": "",
                 "raw_strategist_response": "",
                 "suggested_events": [],

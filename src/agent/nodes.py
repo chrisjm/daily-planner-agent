@@ -178,27 +178,66 @@ def planner(state: AgentState) -> AgentState:
     print(f"   Confidence was: {state.get('confidence', 0.0):.2f}")
 
     response = llm.invoke([HumanMessage(content=prompt)])
-    schedule = response.content
+    full_response = response.content
 
-    print(f"✅ Schedule generated ({len(schedule)} chars)")
+    print(f"✅ Schedule generated ({len(full_response)} chars)")
+
+    # Extract JSON schedule if present
+    schedule_json = []
+    markdown_schedule = full_response
+
+    try:
+        # Look for JSON code block
+        if "```json" in full_response:
+            json_start = full_response.find("```json") + 7
+            json_end = full_response.find("```", json_start)
+            json_str = full_response[json_start:json_end].strip()
+            schedule_json = json.loads(json_str)
+
+            # Extract markdown (everything after the JSON block)
+            markdown_start = full_response.find("```", json_end) + 3
+            markdown_schedule = full_response[markdown_start:].strip()
+
+            print(f"   Extracted {len(schedule_json)} time blocks from schedule")
+        else:
+            print("   No JSON schedule found in response")
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"⚠️  Could not parse schedule JSON: {e}")
+        schedule_json = []
 
     return {
         **state,
-        "final_schedule": schedule,
-        "messages": state["messages"] + [AIMessage(content=schedule)],
+        "final_schedule": markdown_schedule,
+        "schedule_json": schedule_json,
+        "messages": state["messages"] + [AIMessage(content=markdown_schedule)],
     }
 
 
 def suggest_events(state: AgentState) -> AgentState:
-    """Node: Generate event suggestions based on schedule gaps and backlog tasks."""
-    print("💡 Generating event suggestions...")
+    """Node: Generate event suggestions from scheduled time blocks."""
+    print("💡 Generating event suggestions from schedule...")
+
+    schedule_json = state.get("schedule_json", [])
+
+    # If no schedule JSON, return empty suggestions
+    if not schedule_json:
+        print("   No schedule JSON available, skipping suggestions")
+        return {
+            **state,
+            "suggested_events": [],
+            "pending_calendar_additions": False,
+        }
 
     llm = ChatGoogleGenerativeAI(model=PLANNER_MODEL, api_key=GOOGLE_API_KEY)
 
+    # Convert schedule_json to string for prompt
+    import json as json_module
+
+    schedule_json_str = json_module.dumps(schedule_json, indent=2)
+
     prompt = SUGGEST_EVENTS_PROMPT.format(
-        final_schedule=state["final_schedule"],
+        schedule_json=schedule_json_str,
         calendar_context=state["calendar_context"],
-        todo_context=state["todo_context"],
         user_intent=state["user_intent"],
     )
 

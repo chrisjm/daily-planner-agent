@@ -16,6 +16,7 @@ class AgentState(TypedDict):
     confidence: float
     missing_info: str
     final_schedule: str
+    schedule_json: List[dict]
     debug_info: str
     raw_strategist_response: str
     suggested_events: List[dict]
