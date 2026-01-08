@@ -5,7 +5,12 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .state import AgentState
-from .prompts import STRATEGIST_PROMPT, CLARIFICATION_PROMPT, PLANNER_PROMPT
+from .prompts import (
+    STRATEGIST_PROMPT,
+    CLARIFICATION_PROMPT,
+    PLANNER_PROMPT,
+    SUGGEST_EVENTS_PROMPT,
+)
 from ..config.settings import (
     GOOGLE_API_KEY,
     STRATEGIST_MODEL,
@@ -15,7 +20,7 @@ from ..config.settings import (
     LOOKBACK_DAYS,
     LOOKAHEAD_DAYS,
 )
-from ..integrations.calendar import get_calendar_events
+from ..integrations.calendar import get_calendar_events, add_calendar_event
 from ..integrations.todoist import get_todoist_tasks
 
 
@@ -181,4 +186,134 @@ def planner(state: AgentState) -> AgentState:
         **state,
         "final_schedule": schedule,
         "messages": state["messages"] + [AIMessage(content=schedule)],
+    }
+
+
+def suggest_events(state: AgentState) -> AgentState:
+    """Node: Generate event suggestions based on schedule gaps and backlog tasks."""
+    print("💡 Generating event suggestions...")
+
+    llm = ChatGoogleGenerativeAI(model=PLANNER_MODEL, api_key=GOOGLE_API_KEY)
+
+    prompt = SUGGEST_EVENTS_PROMPT.format(
+        final_schedule=state["final_schedule"],
+        calendar_context=state["calendar_context"],
+        todo_context=state["todo_context"],
+        user_intent=state["user_intent"],
+    )
+
+    response = llm.invoke([HumanMessage(content=prompt)])
+
+    print("📝 Raw suggest_events response (first 500 chars):")
+    print(f"   {response.content[:500]}")
+
+    try:
+        # Try to extract JSON from markdown code blocks if present
+        content = response.content.strip()
+        if content.startswith("```"):
+            # Extract JSON from code block
+            lines = content.split("\n")
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith("```"):
+                    in_code_block = not in_code_block
+                    continue
+                if in_code_block:
+                    json_lines.append(line)
+            content = "\n".join(json_lines)
+            print(f"   Extracted from code block: {content[:200]}")
+
+        suggested_events = json.loads(content)
+
+        if not isinstance(suggested_events, list):
+            print("⚠️  Response is not a list, wrapping in array")
+            suggested_events = []
+
+        print(f"✅ Successfully parsed {len(suggested_events)} event suggestions")
+
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"⚠️  Error parsing suggest_events response: {e}")
+        print("   Full response content:")
+        print(f"   {response.content}")
+        suggested_events = []
+
+    return {
+        **state,
+        "suggested_events": suggested_events,
+        "pending_calendar_additions": len(suggested_events) > 0,
+    }
+
+
+def add_approved_events(state: AgentState) -> AgentState:
+    """Node: Add user-approved events to Google Calendar."""
+    print("📤 Adding approved events to calendar...")
+
+    approved_ids = state.get("approved_event_ids", [])
+    suggested_events = state.get("suggested_events", [])
+
+    if not approved_ids:
+        print("   No events approved by user")
+        return {
+            **state,
+            "pending_calendar_additions": False,
+            "messages": state["messages"]
+            + [AIMessage(content="No events were selected to add to your calendar.")],
+        }
+
+    # Filter to only approved events
+    events_to_add = [e for e in suggested_events if e.get("id") in approved_ids]
+
+    print(f"   Adding {len(events_to_add)} approved events...")
+
+    results = []
+    success_count = 0
+    failed_events = []
+
+    for event in events_to_add:
+        print(f"   Adding: {event['title']} at {event['start_time']}")
+
+        # Prepare event data for calendar API
+        event_data = {
+            "title": event["title"],
+            "start_time": event["start_time"],
+            "end_time": event["end_time"],
+            "description": f"Priority: {event.get('priority', 'N/A')}\nSource: {event.get('source_task', 'Suggested')}\n\nRationale: {event.get('rationale', '')}",
+        }
+
+        result = add_calendar_event(event_data)
+        results.append(result)
+
+        if result["success"]:
+            success_count += 1
+            print(f"   ✅ Added: {event['title']}")
+        else:
+            failed_events.append(event["title"])
+            print(f"   ❌ Failed: {event['title']} - {result['error']}")
+
+    # Build response message
+    if success_count == len(events_to_add):
+        message = f"✅ Successfully added {success_count} event(s) to your calendar!"
+    elif success_count > 0:
+        message = f"⚠️ Added {success_count} of {len(events_to_add)} events. Failed to add: {', '.join(failed_events)}"
+    else:
+        message = f"❌ Failed to add any events. Errors: {', '.join(failed_events)}"
+
+    print(
+        f"✅ Calendar additions complete: {success_count}/{len(events_to_add)} successful"
+    )
+
+    # Refresh calendar context to include new events
+    print("🔄 Refreshing calendar context...")
+    updated_calendar_context = get_calendar_events(
+        lookback=LOOKBACK_DAYS, lookahead=LOOKAHEAD_DAYS
+    )
+
+    return {
+        **state,
+        "calendar_context": updated_calendar_context,
+        "pending_calendar_additions": False,
+        "suggested_events": [],
+        "approved_event_ids": [],
+        "messages": state["messages"] + [AIMessage(content=message)],
     }

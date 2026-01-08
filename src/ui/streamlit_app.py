@@ -5,6 +5,7 @@ import markdown
 from langchain_core.messages import HumanMessage, AIMessage
 
 from ..agent import create_graph
+from ..agent.nodes import add_approved_events
 
 
 def run_app():
@@ -37,6 +38,9 @@ def run_app():
             "final_schedule": "",
             "debug_info": "",
             "raw_strategist_response": "",
+            "suggested_events": [],
+            "approved_event_ids": [],
+            "pending_calendar_additions": False,
         }
 
     if "conversation_started" not in st.session_state:
@@ -44,6 +48,9 @@ def run_app():
 
     if "waiting_for_clarification" not in st.session_state:
         st.session_state.waiting_for_clarification = False
+
+    if "showing_event_suggestions" not in st.session_state:
+        st.session_state.showing_event_suggestions = False
 
     # Sidebar with context and thought processes
     st.sidebar.header("📊 Context & Thought Process")
@@ -147,10 +154,23 @@ def run_app():
 
             with st.spinner("🔄 Gathering context and analyzing..."):
                 # Add user message to state for graph processing
+                # Only add if not already present to avoid duplicates
+                new_message = HumanMessage(content=user_input)
+                current_messages = st.session_state.state.get("messages", [])
+
+                # Check if this exact message is already in the list
+                if not any(
+                    isinstance(m, HumanMessage) and m.content == user_input
+                    for m in current_messages
+                ):
+                    messages_to_send = current_messages + [new_message]
+                else:
+                    messages_to_send = current_messages
+
                 result = st.session_state.graph.invoke(
                     {
                         **st.session_state.state,
-                        "messages": [HumanMessage(content=user_input)],
+                        "messages": messages_to_send,
                     },
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 )
@@ -158,6 +178,12 @@ def run_app():
 
                 if result.get("final_schedule"):
                     st.session_state.waiting_for_clarification = False
+                    # Check if there are suggested events to show
+                    if (
+                        result.get("suggested_events")
+                        and len(result["suggested_events"]) > 0
+                    ):
+                        st.session_state.showing_event_suggestions = True
                 else:
                     st.session_state.waiting_for_clarification = True
 
@@ -173,10 +199,23 @@ def run_app():
 
             with st.spinner("🔄 Re-analyzing with your clarification..."):
                 # Add clarification message to state for graph processing
+                # Only add if not already present to avoid duplicates
+                new_message = HumanMessage(content=clarification_input)
+                current_messages = st.session_state.state.get("messages", [])
+
+                # Check if this exact message is already in the list
+                if not any(
+                    isinstance(m, HumanMessage) and m.content == clarification_input
+                    for m in current_messages
+                ):
+                    messages_to_send = current_messages + [new_message]
+                else:
+                    messages_to_send = current_messages
+
                 result = st.session_state.graph.invoke(
                     {
                         **st.session_state.state,
-                        "messages": [HumanMessage(content=clarification_input)],
+                        "messages": messages_to_send,
                     },
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 )
@@ -184,10 +223,85 @@ def run_app():
 
                 if result.get("final_schedule"):
                     st.session_state.waiting_for_clarification = False
+                    # Check if there are suggested events to show
+                    if (
+                        result.get("suggested_events")
+                        and len(result["suggested_events"]) > 0
+                    ):
+                        st.session_state.showing_event_suggestions = True
                 else:
                     st.session_state.waiting_for_clarification = True
 
             st.rerun()
+
+    elif st.session_state.showing_event_suggestions:
+        # Show event approval interface
+        st.subheader("🎯 Suggested Events to Add to Calendar")
+        st.markdown("Select events you'd like to add to your Google Calendar:")
+
+        suggested_events = st.session_state.state.get("suggested_events", [])
+
+        if not suggested_events:
+            st.info("No event suggestions available.")
+            st.session_state.showing_event_suggestions = False
+            st.rerun()
+        else:
+            # Create checkboxes for each suggested event
+            selected_event_ids = []
+
+            for idx, event in enumerate(suggested_events):
+                event_id = event.get("id", f"event_{idx}")
+
+                with st.expander(
+                    f"📅 {event['title']} - {event['start_time']}", expanded=True
+                ):
+                    col1, col2 = st.columns([3, 1])
+
+                    with col1:
+                        st.markdown(
+                            f"**Time:** {event['start_time']} - {event['end_time']}"
+                        )
+                        st.markdown(
+                            f"**Duration:** {event['duration_minutes']} minutes"
+                        )
+                        st.markdown(f"**Priority:** {event.get('priority', 'N/A')}")
+                        if event.get("source_task"):
+                            st.markdown(f"**Source Task:** {event['source_task']}")
+                        st.markdown(f"**Rationale:** {event.get('rationale', '')}")
+
+                    with col2:
+                        if st.checkbox(
+                            "Add this event", key=f"select_{event_id}", value=False
+                        ):
+                            selected_event_ids.append(event_id)
+
+            # Action buttons
+            col1, col2, col3 = st.columns([1, 1, 2])
+
+            with col1:
+                if st.button("✅ Add Selected Events", type="primary"):
+                    if selected_event_ids:
+                        # Update state with approved events
+                        st.session_state.state["approved_event_ids"] = (
+                            selected_event_ids
+                        )
+
+                        with st.spinner("📤 Adding events to calendar..."):
+                            # Call add_approved_events node directly
+                            result = add_approved_events(st.session_state.state)
+                            st.session_state.state = result
+
+                        st.session_state.showing_event_suggestions = False
+                        st.rerun()
+                    else:
+                        st.warning("Please select at least one event to add.")
+
+            with col2:
+                if st.button("⏭️ Skip All"):
+                    st.session_state.showing_event_suggestions = False
+                    st.session_state.state["suggested_events"] = []
+                    st.session_state.state["pending_calendar_additions"] = False
+                    st.rerun()
 
     else:
         st.success(
@@ -207,9 +321,13 @@ def run_app():
                 "final_schedule": "",
                 "debug_info": "",
                 "raw_strategist_response": "",
+                "suggested_events": [],
+                "approved_event_ids": [],
+                "pending_calendar_additions": False,
             }
             st.session_state.conversation_started = False
             st.session_state.waiting_for_clarification = False
+            st.session_state.showing_event_suggestions = False
             st.session_state.thread_id = str(uuid.uuid4())
             st.rerun()
 

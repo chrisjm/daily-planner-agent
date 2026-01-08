@@ -18,3 +18,6 @@ class AgentState(TypedDict):
     final_schedule: str
     debug_info: str
     raw_strategist_response: str
+    suggested_events: List[dict]
+    approved_event_ids: List[str]
+    pending_calendar_additions: bool
