@@ -2,10 +2,174 @@
 
 import streamlit as st
 import markdown
+from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
 from ..agent import create_graph
 from ..agent.nodes import add_approved_events
+
+
+def render_schedule_from_json(schedule_json, metadata):
+    """Render a user-friendly schedule display from JSON data."""
+    if not schedule_json:
+        return "No schedule generated."
+
+    # Priority emoji mapping
+    priority_emoji = {"P1": "🔴", "P2": "🟡", "P3": "🔵", "P4": "⚪"}
+
+    # Type emoji mapping
+    type_emoji = {
+        "work": "💼",
+        "break": "☕",
+        "meeting": "👥",
+        "focus": "🎯",
+        "admin": "📋",
+        "personal": "🏠",
+    }
+
+    # Energy level emoji
+    energy_emoji = {"high": "⚡", "medium": "🔋", "low": "🪫"}
+
+    output = []
+
+    # Add metadata summary
+    if metadata:
+        output.append("## 📊 Schedule Overview\n")
+        if metadata.get("scheduling_strategy"):
+            output.append(f"**Strategy:** {metadata['scheduling_strategy']}\n")
+        if metadata.get("peak_energy_utilization"):
+            output.append(
+                f"**Energy Management:** {metadata['peak_energy_utilization']}\n"
+            )
+
+        stats = []
+        if metadata.get("total_scheduled_minutes"):
+            hours = metadata["total_scheduled_minutes"] / 60
+            stats.append(f"⏱️ {hours:.1f} hours scheduled")
+        if metadata.get("high_priority_count"):
+            stats.append(f"🔴 {metadata['high_priority_count']} high-priority tasks")
+        if metadata.get("break_count"):
+            stats.append(f"☕ {metadata['break_count']} breaks")
+
+        if stats:
+            output.append(" • ".join(stats) + "\n")
+
+        if metadata.get("flexibility_notes"):
+            output.append(f"\n💡 **Flexibility:** {metadata['flexibility_notes']}\n")
+
+        output.append("\n---\n")
+
+    # Add schedule items
+    output.append("## 📅 Your Schedule\n")
+
+    for item in schedule_json:
+        # Parse times for display
+        try:
+            start = datetime.strptime(item["start_time"], "%Y-%m-%d %H:%M")
+            end = datetime.strptime(item["end_time"], "%Y-%m-%d %H:%M")
+            time_str = f"{start.strftime('%I:%M %p')} - {end.strftime('%I:%M %p')}"
+        except (ValueError, KeyError):
+            time_str = f"{item['start_time']} - {item['end_time']}"
+
+        # Build the item display
+        priority = priority_emoji.get(item.get("priority", ""), "")
+        type_icon = type_emoji.get(item.get("type", ""), "")
+        energy = energy_emoji.get(item.get("energy_level", ""), "")
+
+        output.append(f"### {type_icon} {time_str}\n")
+        output.append(f"**{priority} {item['title']}** {energy}\n")
+
+        if item.get("description"):
+            output.append(f"\n{item['description']}\n")
+
+        # Add metadata in a compact format
+        meta_items = []
+        if item.get("priority"):
+            meta_items.append(f"Priority: {item['priority']}")
+        if item.get("cognitive_load"):
+            meta_items.append(f"Cognitive Load: {item['cognitive_load']}")
+        if item.get("tags"):
+            tags_str = ", ".join(item["tags"])
+            meta_items.append(f"Tags: {tags_str}")
+
+        if meta_items:
+            output.append(f"\n*{' • '.join(meta_items)}*\n")
+
+        if item.get("rationale"):
+            output.append(f"\n💭 *{item['rationale']}*\n")
+
+        output.append("\n")
+
+    return "\n".join(output)
+
+
+def generate_final_report(schedule_json, metadata, added_events):
+    """Generate a final schedule report including which events were added to calendar."""
+    if not schedule_json:
+        return "No schedule generated."
+
+    output = []
+
+    # Add header
+    output.append("# 📋 Final Schedule Report\n")
+
+    # Add metadata summary
+    if metadata:
+        if metadata.get("scheduling_strategy"):
+            output.append(f"**Strategy:** {metadata['scheduling_strategy']}\n")
+
+        stats = []
+        if metadata.get("total_scheduled_minutes"):
+            hours = metadata["total_scheduled_minutes"] / 60
+            stats.append(f"⏱️ {hours:.1f} hours")
+        if metadata.get("high_priority_count"):
+            stats.append(f"🔴 {metadata['high_priority_count']} P1 tasks")
+        if metadata.get("break_count"):
+            stats.append(f"☕ {metadata['break_count']} breaks")
+
+        if stats:
+            output.append(" • ".join(stats) + "\n")
+
+        output.append("\n")
+
+    # Add calendar integration status
+    if added_events:
+        output.append(f"## ✅ Added to Calendar ({len(added_events)} events)\n")
+        for event in added_events:
+            try:
+                start = datetime.strptime(event["start_time"], "%Y-%m-%d %H:%M")
+                time_str = start.strftime("%I:%M %p")
+            except (ValueError, KeyError):
+                time_str = event.get("start_time", "")
+
+            output.append(f"- **{time_str}** - {event.get('title', 'Untitled')}\n")
+        output.append("\n")
+
+    # Add condensed schedule view
+    output.append("## 📅 Complete Schedule\n")
+
+    for item in schedule_json:
+        try:
+            start = datetime.strptime(item["start_time"], "%Y-%m-%d %H:%M")
+            end = datetime.strptime(item["end_time"], "%Y-%m-%d %H:%M")
+            time_str = f"{start.strftime('%I:%M %p')} - {end.strftime('%I:%M %p')}"
+        except (ValueError, KeyError):
+            time_str = f"{item['start_time']} - {item['end_time']}"
+
+        # Check if this was added to calendar
+        in_calendar = any(
+            e.get("title") == item.get("title")
+            and e.get("start_time") == item.get("start_time")
+            for e in added_events
+        )
+        calendar_marker = "📅 " if in_calendar else ""
+
+        priority_emoji = {"P1": "🔴", "P2": "🟡", "P3": "🔵", "P4": "⚪"}
+        priority = priority_emoji.get(item.get("priority", ""), "")
+
+        output.append(f"**{time_str}** {calendar_marker}{priority} {item['title']}\n")
+
+    return "\n".join(output)
 
 
 def run_app():
@@ -36,6 +200,8 @@ def run_app():
             "confidence": 0.0,
             "missing_info": "",
             "final_schedule": "",
+            "schedule_json": [],
+            "schedule_metadata": {},
             "debug_info": "",
             "raw_strategist_response": "",
             "suggested_events": [],
@@ -52,6 +218,12 @@ def run_app():
 
     if "showing_event_suggestions" not in st.session_state:
         st.session_state.showing_event_suggestions = False
+
+    if "added_events" not in st.session_state:
+        st.session_state.added_events = []
+
+    if "show_final_report" not in st.session_state:
+        st.session_state.show_final_report = False
 
     # Sidebar with context and thought processes
     st.sidebar.header("📊 Context & Thought Process")
@@ -126,6 +298,15 @@ def run_app():
             elif isinstance(msg, AIMessage):
                 with st.chat_message("assistant"):
                     st.markdown(msg.content)
+
+        # If we have a schedule, render it from JSON
+        if st.session_state.state.get("schedule_json"):
+            with st.chat_message("assistant"):
+                schedule_display = render_schedule_from_json(
+                    st.session_state.state["schedule_json"],
+                    st.session_state.state.get("schedule_metadata", {}),
+                )
+                st.markdown(schedule_display)
 
     # Chat input handling
     if not st.session_state.conversation_started:
@@ -285,8 +466,19 @@ def run_app():
             for idx, event in enumerate(suggested_events):
                 event_id = event.get("id", f"event_{idx}")
 
+                # Build expander title with type emoji
+                type_emoji_map = {
+                    "work": "💼",
+                    "meeting": "👥",
+                    "focus": "🎯",
+                    "admin": "📋",
+                    "personal": "🏠",
+                }
+                type_icon = type_emoji_map.get(event.get("type", ""), "📅")
+
                 with st.expander(
-                    f"📅 {event['title']} - {event['start_time']}", expanded=True
+                    f"{type_icon} {event['title']} - {event['start_time']}",
+                    expanded=True,
                 ):
                     col1, col2 = st.columns([3, 1])
 
@@ -298,9 +490,26 @@ def run_app():
                             f"**Duration:** {event['duration_minutes']} minutes"
                         )
                         st.markdown(f"**Priority:** {event.get('priority', 'N/A')}")
-                        if event.get("source_task"):
-                            st.markdown(f"**Source Task:** {event['source_task']}")
-                        st.markdown(f"**Rationale:** {event.get('rationale', '')}")
+
+                        # Show new metadata fields
+                        if event.get("energy_level"):
+                            energy_emoji = {"high": "⚡", "medium": "🔋", "low": "🪫"}
+                            energy_icon = energy_emoji.get(event["energy_level"], "")
+                            st.markdown(
+                                f"**Energy Level:** {energy_icon} {event['energy_level'].title()}"
+                            )
+
+                        if event.get("cognitive_load"):
+                            st.markdown(
+                                f"**Cognitive Load:** {event['cognitive_load'].title()}"
+                            )
+
+                        if event.get("tags"):
+                            tags_str = ", ".join(event["tags"])
+                            st.markdown(f"**Tags:** {tags_str}")
+
+                        if event.get("rationale"):
+                            st.markdown(f"**Rationale:** {event['rationale']}")
 
                     with col2:
                         if st.checkbox(
@@ -326,6 +535,14 @@ def run_app():
                             approved_count = len(selected_event_ids)
                             st.write(f"🔄 Processing {approved_count} event(s)...")
 
+                            # Track which events are being added
+                            events_to_add = [
+                                e
+                                for e in suggested_events
+                                if e.get("id") in selected_event_ids
+                            ]
+                            st.session_state.added_events = events_to_add
+
                             # Call add_approved_events node directly
                             result = add_approved_events(st.session_state.state)
                             st.session_state.state = result
@@ -347,6 +564,7 @@ def run_app():
                             )
 
                         st.session_state.showing_event_suggestions = False
+                        st.session_state.show_final_report = True
                         st.rerun()
                     else:
                         st.warning("Please select at least one event to add.")
@@ -356,12 +574,36 @@ def run_app():
                     st.session_state.showing_event_suggestions = False
                     st.session_state.state["suggested_events"] = []
                     st.session_state.state["pending_calendar_additions"] = False
+                    st.session_state.show_final_report = True
                     st.rerun()
 
     else:
-        st.success(
-            "✅ Schedule generated! You can start a new conversation by refreshing the page."
-        )
+        # Show final report if available
+        if st.session_state.show_final_report and st.session_state.state.get(
+            "schedule_json"
+        ):
+            st.subheader("📋 Final Schedule Report")
+
+            # Generate and display the final report
+            final_report = generate_final_report(
+                st.session_state.state["schedule_json"],
+                st.session_state.state.get("schedule_metadata", {}),
+                st.session_state.added_events,
+            )
+            st.markdown(final_report)
+
+            # Add download button for the report
+            st.download_button(
+                label="📥 Download Schedule Report",
+                data=final_report,
+                file_name="schedule_report.md",
+                mime="text/markdown",
+            )
+        else:
+            st.success(
+                "✅ Schedule generated! You can start a new conversation by refreshing the page."
+            )
+
         if st.button("🔄 Start New Planning Session"):
             import uuid
 
@@ -375,6 +617,7 @@ def run_app():
                 "missing_info": "",
                 "final_schedule": "",
                 "schedule_json": [],
+                "schedule_metadata": {},
                 "debug_info": "",
                 "raw_strategist_response": "",
                 "suggested_events": [],
@@ -386,6 +629,8 @@ def run_app():
             st.session_state.conversation_started = False
             st.session_state.waiting_for_clarification = False
             st.session_state.showing_event_suggestions = False
+            st.session_state.added_events = []
+            st.session_state.show_final_report = False
             st.session_state.thread_id = str(uuid.uuid4())
             st.rerun()
 

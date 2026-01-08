@@ -199,7 +199,7 @@ def ask_clarification(state: AgentState) -> AgentState:
 
 
 def planner(state: AgentState) -> AgentState:
-    """Node: Generate final Markdown schedule."""
+    """Node: Generate final schedule as structured JSON."""
     cycle = state.get("cycle_count", 1)
     print(f"📅 Generating final schedule... (Cycle {cycle})")
 
@@ -228,45 +228,56 @@ def planner(state: AgentState) -> AgentState:
 
     print(f"✅ Schedule generated ({len(full_response)} chars)")
 
-    # Extract JSON schedule if present
+    # Parse the JSON response
+    schedule_data = {}
     schedule_json = []
-    markdown_schedule = full_response
+    metadata = {}
 
     try:
-        # Look for JSON code block
-        if "```json" in full_response:
-            json_start = full_response.find("```json") + 7
-            json_end = full_response.find("```", json_start)
-            json_str = full_response[json_start:json_end].strip()
-            schedule_json = json.loads(json_str)
+        # Try to extract JSON from markdown code blocks if present
+        content = full_response.strip()
+        if content.startswith("```"):
+            # Extract JSON from code block
+            lines = content.split("\n")
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith("```"):
+                    in_code_block = not in_code_block
+                    continue
+                if in_code_block:
+                    json_lines.append(line)
+            content = "\n".join(json_lines)
+            print(f"   Extracted from code block: {content[:200]}")
 
-            # Extract markdown (everything after the JSON block)
-            markdown_start = full_response.find("```", json_end) + 3
-            markdown_schedule = full_response[markdown_start:].strip()
+        schedule_data = json.loads(content)
+        schedule_json = schedule_data.get("schedule", [])
+        metadata = schedule_data.get("metadata", {})
 
-            print(f"   Extracted {len(schedule_json)} time blocks from schedule")
-        else:
-            print("   No JSON schedule found in response")
+        print(f"   Parsed {len(schedule_json)} time blocks from schedule")
+        print(f"   Metadata: {metadata.get('scheduling_strategy', 'N/A')[:100]}...")
     except (json.JSONDecodeError, ValueError) as e:
         print(f"⚠️  Could not parse schedule JSON: {e}")
+        print(f"   Full response: {full_response[:500]}")
         schedule_json = []
+        metadata = {}
 
-    # Only add message if this is the first time through this node (cycle 1)
-    # On subsequent cycles, the message is already in the state
+    # Store the full structured data
+    # We'll generate a user-friendly message later in the UI
     if cycle == 1:
         return {
             **state,
-            "final_schedule": markdown_schedule,
             "schedule_json": schedule_json,
-            "messages": state.get("messages", [])
-            + [AIMessage(content=markdown_schedule)],
+            "schedule_metadata": metadata,
+            "final_schedule": "",  # No longer using markdown
         }
     else:
-        print("   ⏭️  Skipping message addition (already added in cycle 1)")
+        print("   ⏭️  Skipping state update (already updated in cycle 1)")
         return {
             **state,
-            "final_schedule": markdown_schedule,
             "schedule_json": schedule_json,
+            "schedule_metadata": metadata,
+            "final_schedule": "",
         }
 
 
@@ -369,12 +380,28 @@ def add_approved_events(state: AgentState) -> AgentState:
     for event in events_to_add:
         print(f"   Adding: {event['title']} at {event['start_time']}")
 
-        # Prepare event data for calendar API
+        # Prepare event data for calendar API with rich metadata
+        description_parts = [
+            f"Priority: {event.get('priority', 'N/A')}",
+            f"Type: {event.get('type', 'N/A')}",
+            f"Energy Level: {event.get('energy_level', 'N/A')}",
+            f"Cognitive Load: {event.get('cognitive_load', 'N/A')}",
+        ]
+
+        if event.get("tags"):
+            tags_str = ", ".join(event["tags"])
+            description_parts.append(f"Tags: {tags_str}")
+
+        description_parts.append(f"\nRationale: {event.get('rationale', '')}")
+        description_parts.append(
+            f"\nSource: {event.get('source_task', 'Planned schedule')}"
+        )
+
         event_data = {
             "title": event["title"],
             "start_time": event["start_time"],
             "end_time": event["end_time"],
-            "description": f"Priority: {event.get('priority', 'N/A')}\nSource: {event.get('source_task', 'Suggested')}\n\nRationale: {event.get('rationale', '')}",
+            "description": "\n".join(description_parts),
         }
 
         result = add_calendar_event(event_data)

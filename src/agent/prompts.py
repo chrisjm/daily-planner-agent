@@ -62,7 +62,7 @@ CLARIFICATION_PROMPT = """You are helping a neurodivergent user plan their day. 
 
 Generate ONE specific, actionable question:"""
 
-PLANNER_PROMPT = """You are an Executive Planner specializing in neurodivergent-friendly scheduling. Create a detailed, actionable daily schedule in Markdown format that prioritizes spoon management and cognitive load.
+PLANNER_PROMPT = """You are an Executive Planner specializing in neurodivergent-friendly scheduling. Create a detailed, actionable daily schedule as structured JSON data that prioritizes spoon management and cognitive load.
 
 **User Intent:**
 {user_intent}
@@ -108,27 +108,41 @@ Create a schedule that follows these neurodivergent-friendly principles:
 
 **Output Format**:
 
-First, output a JSON array of scheduled time blocks (for calendar integration):
-```json
-[
-  {{
-    "start_time": "YYYY-MM-DD HH:MM",
-    "end_time": "YYYY-MM-DD HH:MM",
-    "title": "Task name",
-    "description": "Brief description",
-    "priority": "P1|P2|P3|P4"
+Return ONLY a valid JSON object with this structure:
+{{
+  "schedule": [
+    {{
+      "start_time": "YYYY-MM-DD HH:MM",
+      "end_time": "YYYY-MM-DD HH:MM",
+      "title": "Task name",
+      "description": "Brief description of what to do",
+      "priority": "P1|P2|P3|P4",
+      "type": "work|break|meeting|focus|admin|personal",
+      "energy_level": "high|medium|low",
+      "cognitive_load": "high|medium|low",
+      "rationale": "Why this task is scheduled at this time",
+      "tags": ["tag1", "tag2"]
+    }}
+  ],
+  "metadata": {{
+    "total_scheduled_minutes": 0,
+    "high_priority_count": 0,
+    "break_count": 0,
+    "peak_energy_utilization": "Description of how peak energy times are used",
+    "scheduling_strategy": "Overall approach and key decisions made",
+    "flexibility_notes": "Areas where schedule can flex if needed"
   }}
-]
-```
+}}
 
-Then output the schedule in clean Markdown format for display:
-- Use time blocks (e.g., "9:00 AM - 10:30 AM")
-- Include task priority indicators (🔴 P1, 🟡 P2, etc.)
-- Add brief rationale for scheduling decisions
-- Include energy level notes (e.g., "High energy window")
-- Suggest breaks and buffer time
+**Important:**
+- Include breaks and buffer time as separate schedule items
+- Each time block should have clear reasoning for its placement
+- Tag tasks appropriately (e.g., "deep-work", "communication", "creative", "administrative")
+- Energy level should reflect when the task is scheduled (morning = high, afternoon = medium, evening = low)
+- Cognitive load should reflect the task's mental demands
+- Type should categorize the activity appropriately
 
-Generate both the JSON and Markdown schedule:"""
+Generate the complete schedule JSON:"""
 
 SUGGEST_EVENTS_PROMPT = """You are an Event Suggestion Assistant. The planner has created a schedule with time blocks. Your job is to convert those scheduled time blocks into calendar event suggestions that the user can add to their Google Calendar.
 
@@ -145,9 +159,10 @@ SUGGEST_EVENTS_PROMPT = """You are an Event Suggestion Assistant. The planner ha
 
 1. **Convert Schedule to Events**: Take each time block from the schedule JSON and format it as a calendar event suggestion
 2. **Avoid Duplicates**: Check if similar events already exist in the calendar context
-3. **Preserve Details**: Keep the title, time, priority, and description from the schedule
+3. **Preserve Details**: Keep all metadata from the schedule (title, time, priority, energy level, cognitive load, rationale, tags, etc.)
 4. **Generate Unique IDs**: Create a unique ID for each event (e.g., "evt_1", "evt_2")
-5. **Add Rationale**: Explain that this is from the optimized schedule
+5. **Skip Breaks**: Do NOT create calendar events for breaks or buffer time (type: "break")
+6. **Focus on Tasks**: Only suggest events for actual work, meetings, and focus time
 
 **Output Format:**
 Return ONLY a valid JSON array of suggested events. Each event must have this structure:
@@ -159,15 +174,20 @@ Return ONLY a valid JSON array of suggested events. Each event must have this st
     "end_time": "<YYYY-MM-DD HH:MM from schedule>",
     "duration_minutes": <calculated from start/end>,
     "priority": "<P1|P2|P3|P4 from schedule>",
-    "rationale": "From your optimized schedule",
+    "type": "<work|meeting|focus|admin|personal from schedule>",
+    "energy_level": "<high|medium|low from schedule>",
+    "cognitive_load": "<high|medium|low from schedule>",
+    "rationale": "<rationale from schedule>",
+    "tags": ["tag1", "tag2"],
     "source_task": "Planned schedule"
   }}
 ]
 
 **Important:**
 - If the schedule JSON is empty, return an empty array: []
-- Convert ALL time blocks from the schedule into event suggestions
-- Maintain the exact times and details from the schedule
-- Each suggestion should match what was planned
+- Skip any time blocks with type "break"
+- Convert all other time blocks into event suggestions
+- Maintain the exact times and all metadata from the schedule
+- Each suggestion should preserve all the rich context from the planner
 
 Generate the event suggestions from the schedule:"""
