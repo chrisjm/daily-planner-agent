@@ -152,28 +152,63 @@ def run_app():
             with st.chat_message("user"):
                 st.markdown(user_input)
 
-            with st.spinner("🔄 Gathering context and analyzing..."):
-                # Add user message to state for graph processing
-                # Only add if not already present to avoid duplicates
-                new_message = HumanMessage(content=user_input)
-                current_messages = st.session_state.state.get("messages", [])
+            # Add user message to state for graph processing
+            # Only add if not already present to avoid duplicates
+            new_message = HumanMessage(content=user_input)
+            current_messages = st.session_state.state.get("messages", [])
 
-                # Check if this exact message is already in the list
-                if not any(
-                    isinstance(m, HumanMessage) and m.content == user_input
-                    for m in current_messages
-                ):
-                    messages_to_send = current_messages + [new_message]
-                else:
-                    messages_to_send = current_messages
+            # Check if this exact message is already in the list
+            if not any(
+                isinstance(m, HumanMessage) and m.content == user_input
+                for m in current_messages
+            ):
+                messages_to_send = current_messages + [new_message]
+            else:
+                messages_to_send = current_messages
 
-                result = st.session_state.graph.invoke(
+            # Use status container for real-time observability
+            with st.status("🔄 Processing your request...", expanded=True) as status:
+                st.write("📊 Gathering context from Calendar and Todoist...")
+
+                # Stream graph execution to show progress
+                result = None
+                for event in st.session_state.graph.stream(
                     {
                         **st.session_state.state,
                         "messages": messages_to_send,
                     },
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
-                )
+                ):
+                    # event is a dict with node name as key
+                    for node_name, node_output in event.items():
+                        if node_name == "gather_context":
+                            st.write("✅ Context gathered")
+                            st.write("🧠 Analyzing with strategist...")
+                        elif node_name == "strategist":
+                            confidence = node_output.get("confidence", 0.0)
+                            st.write(
+                                f"✅ Analysis complete (confidence: {confidence:.0%})"
+                            )
+                            if confidence < 0.95:
+                                st.write("💬 Generating clarification question...")
+                            else:
+                                st.write("📅 Creating your schedule...")
+                        elif node_name == "ask_clarification":
+                            st.write("✅ Clarification question ready")
+                        elif node_name == "planner":
+                            st.write("✅ Schedule generated")
+                            st.write("💡 Analyzing schedule for event suggestions...")
+                        elif node_name == "suggest_events":
+                            event_count = len(node_output.get("suggested_events", []))
+                            if event_count > 0:
+                                st.write(f"✅ Found {event_count} event suggestion(s)")
+                            else:
+                                st.write("✅ No additional events to suggest")
+
+                        result = node_output
+
+                status.update(label="✅ Processing complete!", state="complete")
+
                 st.session_state.state = result
 
                 if result.get("final_schedule"):
@@ -286,10 +321,32 @@ def run_app():
                             selected_event_ids
                         )
 
-                        with st.spinner("📤 Adding events to calendar..."):
+                        # Use status container for real-time observability
+                        with st.status(
+                            "📤 Adding events to calendar...", expanded=True
+                        ) as status:
+                            approved_count = len(selected_event_ids)
+                            st.write(f"🔄 Processing {approved_count} event(s)...")
+
                             # Call add_approved_events node directly
                             result = add_approved_events(st.session_state.state)
                             st.session_state.state = result
+
+                            # Show results
+                            success_msg = [
+                                msg
+                                for msg in result.get("messages", [])
+                                if isinstance(msg, AIMessage)
+                            ]
+                            if success_msg:
+                                st.write(success_msg[-1].content)
+
+                            st.write("🔄 Refreshing calendar context...")
+                            st.write("✅ Calendar updated!")
+
+                            status.update(
+                                label="✅ Events added successfully!", state="complete"
+                            )
 
                         st.session_state.showing_event_suggestions = False
                         st.rerun()
