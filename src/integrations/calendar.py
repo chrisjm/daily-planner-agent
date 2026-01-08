@@ -29,6 +29,19 @@ _logger = IntegrationLogger("calendar")
 _validator = IntegrationValidator("calendar")
 
 
+def get_calendar_timezone():
+    """Get the timezone of the primary Google Calendar."""
+    try:
+        service = get_google_calendar_service()
+        calendar = service.calendars().get(calendarId="primary").execute()
+        timezone = calendar.get("timeZone", "UTC")
+        _logger.debug(f"Calendar timezone: {timezone}")
+        return timezone
+    except Exception as e:
+        _logger.warning(f"Could not get calendar timezone, defaulting to UTC: {e}")
+        return "UTC"
+
+
 def get_google_calendar_service():
     """Authenticate and return Google Calendar service."""
     _logger.info("Initializing Google Calendar service")
@@ -317,26 +330,31 @@ def add_calendar_event(event_data: dict) -> dict:
     try:
         service = get_google_calendar_service()
 
-        # Parse datetime strings to ISO format
-        from datetime import datetime, timezone
+        # Get the calendar's timezone
+        calendar_tz = get_calendar_timezone()
+
+        # Parse datetime strings and make timezone-aware
+        from datetime import datetime
+        import pytz
 
         start_dt = datetime.strptime(event_data["start_time"], "%Y-%m-%d %H:%M")
         end_dt = datetime.strptime(event_data["end_time"], "%Y-%m-%d %H:%M")
 
-        # Make timezone-aware (use local timezone)
-        start_dt = start_dt.replace(tzinfo=timezone.utc)
-        end_dt = end_dt.replace(tzinfo=timezone.utc)
+        # Localize to calendar timezone
+        tz = pytz.timezone(calendar_tz)
+        start_dt = tz.localize(start_dt)
+        end_dt = tz.localize(end_dt)
 
         # Build event object for Google Calendar API
         event = {
             "summary": event_data["title"],
             "start": {
                 "dateTime": start_dt.isoformat(),
-                "timeZone": "UTC",
+                "timeZone": calendar_tz,
             },
             "end": {
                 "dateTime": end_dt.isoformat(),
-                "timeZone": "UTC",
+                "timeZone": calendar_tz,
             },
         }
 
