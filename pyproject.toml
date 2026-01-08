@@ -1,9 +1,9 @@
 [project]
 name = "daily-planner-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "An AI-powered daily planning consultant that autonomously gathers your schedule and task context, strategizes based on your intent, and delivers a personalized daily plan."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "google-api-python-client>=2.187.0",
     "google-auth-oauthlib>=1.2.2",

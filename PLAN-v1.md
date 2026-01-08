@@ -27,7 +27,8 @@ The graph operates as a loop: **Gather -> Strategize -> Check Confidence -> (Loo
 - **>= 0.95**: Route to `planner`.
 
 4. **`ask_clarification`**: (`gemini-2.0-flash`) Generates single specific question -> Updates State -> Loops back to `strategist`.
-5. **`planner`**: (`gemini-2.0-pro`) Generates final Markdown schedule.
+5. **`planner`**: (`gemini-2.5-pro`) Generates structured JSON schedule with time blocks, priorities, energy levels, and rationale.
+6. **`add_approved_events`**: Adds user-selected events to Google Calendar with rich metadata.
 
 ---
 
@@ -69,7 +70,13 @@ class AgentState(TypedDict):
     analysis: str          # LLM internal reasoning
     confidence: float      # 0.0 to 1.0
     missing_info: str      # What prevents 100% confidence?
-    final_schedule: str    # Markdown output
+    schedule_json: List[dict]  # Structured schedule output
+    schedule_metadata: dict    # Scheduling strategy metadata
+    suggested_events: List[dict]  # Calendar event suggestions
+    approved_event_ids: List[str]  # User-approved event IDs
+    pending_calendar_additions: bool  # Flag for pending operations
+    cycle_count: int       # Graph execution cycles
+    clarification_count: int  # Clarification attempts
 
 ```
 
@@ -86,7 +93,8 @@ class AgentState(TypedDict):
 
 ### **4. Execution Steps**
 
-1. **Auth:** Acquire GCP `credentials.json` (OAuth Desktop App) and Todoist API Token.
-2. **Sensors:** Implement `tools.py` to fetch and clean raw data.
-3. **Brain:** Build `graph.py` with `StateGraph`. Mock LLM calls initially to verify routing logic.
-4. **Interface:** Implement `app.py` with Streamlit to handle the chat loop and render the Markdown plan.
+1. **Auth:** Acquire GCP `credentials.json` (OAuth Desktop/Web App with read/write scopes) and Todoist API Token.
+2. **Sensors:** Implement calendar and todoist integrations to fetch and clean raw data.
+3. **Brain:** Build `graph.py` with `StateGraph` including calendar event addition workflow.
+4. **Interface:** Implement Streamlit UI to handle chat loop, render structured schedule, and manage event approval.
+5. **Calendar Integration:** Implement event conversion and addition with rich metadata.

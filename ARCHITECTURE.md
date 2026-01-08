@@ -27,7 +27,13 @@ The Executive Function Agent is built with a modular Python architecture that se
 - `strategist()`: Analyzes with confidence scoring
 - `check_confidence()`: Router function (threshold: 0.95)
 - `ask_clarification()`: Generates questions
-- `planner()`: Creates final Markdown schedule
+- `planner()`: Creates structured JSON schedule with event suggestions
+- `add_approved_events()`: Adds user-selected events to Google Calendar
+
+**utils.py**
+
+- `convert_schedule_to_events()`: Converts schedule JSON to calendar event suggestions
+- Filters out breaks and enriches events with metadata
 
 **graph.py**
 
@@ -39,9 +45,11 @@ The Executive Function Agent is built with a modular Python architecture that se
 
 **calendar.py**
 
-- Google Calendar OAuth authentication
+- Google Calendar OAuth authentication with read/write scopes
 - `get_google_calendar_service()`: Returns authenticated service
 - `get_calendar_events()`: Fetches and formats events with rich context
+- `add_calendar_event()`: Adds a single event to Google Calendar with metadata
+- `get_calendar_timezone()`: Retrieves calendar timezone for proper event creation
 
 **todoist.py**
 
@@ -84,7 +92,11 @@ strategist → [Gemini 2.5 Pro analyzes context]
     ↓
 check_confidence
     ├─ < 0.95 → ask_clarification → [Gemini 2.0 Flash] → END (user responds)
-    └─ ≥ 0.95 → planner → [Gemini 2.5 Pro] → Final Schedule
+    └─ ≥ 0.95 → planner → [Gemini 2.5 Pro] → JSON Schedule + Event Suggestions → END
+                                                    ↓
+                                            User Selects Events
+                                                    ↓
+                                            add_approved_events → [Calendar API] → END
 ```
 
 ## State Management
@@ -98,7 +110,13 @@ The `AgentState` flows through all nodes:
 - **analysis**: LLM reasoning
 - **confidence**: 0.0-1.0 score
 - **missing_info**: What's needed for 100% confidence
-- **final_schedule**: Markdown output
+- **schedule_json**: Structured schedule as list of time blocks
+- **schedule_metadata**: Metadata about scheduling strategy
+- **suggested_events**: Calendar event suggestions generated from schedule
+- **approved_event_ids**: IDs of events user wants to add to calendar
+- **pending_calendar_additions**: Boolean flag for pending calendar operations
+- **cycle_count**: Number of graph execution cycles
+- **clarification_count**: Number of clarification attempts
 
 ## Design Principles
 
@@ -106,8 +124,10 @@ The `AgentState` flows through all nodes:
 2. **Configuration Centralization**: All settings in `config/settings.py`
 3. **Prompt Externalization**: Prompts separate from logic
 4. **Rich Context**: Extract all unstructured data from sources
-5. **Testability**: Each module can be tested independently
-6. **Extensibility**: Easy to add new integrations or nodes
+5. **Structured Output**: JSON-based schedule format for programmatic processing
+6. **User Control**: Explicit approval required before calendar modifications
+7. **Testability**: Each module can be tested independently
+8. **Extensibility**: Easy to add new integrations or nodes
 
 ## Adding New Features
 
@@ -129,9 +149,42 @@ The `AgentState` flows through all nodes:
 2. Export in `__init__.py`
 3. Import where needed
 
+## Schedule Structure
+
+The planner generates a structured JSON schedule with the following format:
+
+```json
+{
+  "schedule": [
+    {
+      "start_time": "YYYY-MM-DD HH:MM",
+      "end_time": "YYYY-MM-DD HH:MM",
+      "title": "Task title",
+      "priority": "P1|P2|P3|P4",
+      "type": "work|meeting|break|personal",
+      "energy_level": "high|medium|low",
+      "cognitive_load": "high|medium|low",
+      "tags": ["tag1", "tag2"],
+      "rationale": "Why this task is scheduled at this time"
+    }
+  ],
+  "metadata": {
+    "scheduling_strategy": "Overall approach and considerations"
+  }
+}
+```
+
+## Calendar Event Addition
+
+1. **Schedule Generation**: Planner creates JSON schedule
+2. **Event Conversion**: `convert_schedule_to_events()` transforms schedule blocks into event suggestions (excludes breaks)
+3. **User Selection**: UI presents events for user approval
+4. **Calendar Addition**: `add_approved_events()` adds selected events with rich metadata
+5. **Context Refresh**: Calendar context updated to include new events
+
 ## Testing Strategy
 
-- **Unit Tests**: Test individual functions (parsers, formatters)
+- **Unit Tests**: Test individual functions (parsers, formatters, event converters)
 - **Integration Tests**: Test API connections with mocks
-- **End-to-End Tests**: Test full graph execution
-- **Prompt Tests**: Validate LLM outputs against expected formats
+- **End-to-End Tests**: Test full graph execution including calendar additions
+- **Prompt Tests**: Validate LLM outputs against expected JSON formats

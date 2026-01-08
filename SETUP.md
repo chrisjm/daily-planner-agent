@@ -25,10 +25,11 @@
 4. Create OAuth 2.0 credentials:
    - Go to "APIs & Services" → "Credentials"
    - Click "Create Credentials" → "OAuth client ID"
-   - Choose "Desktop app"
+   - Choose "Desktop app" or "Web application"
    - Download the JSON file
    - Rename it to `credentials.json`
    - Place it in the project root directory
+   - **Note**: The app requires both read and write access to your calendar
 
 ## 2. Configure Environment
 
@@ -63,6 +64,13 @@ Navigate to `http://localhost:8501` and try:
 - "Help me plan tomorrow focusing on deep work"
 - "I need to prepare for my presentation next week"
 - "Balance my workload for the next 3 days"
+
+The agent will:
+
+1. Analyze your calendar and tasks
+2. Generate a structured schedule
+3. Present event suggestions
+4. Add selected events to your calendar with rich metadata
 
 ## Troubleshooting
 

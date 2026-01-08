@@ -8,6 +8,8 @@ An AI-powered daily planning consultant that autonomously gathers your schedule 
 - **Strategic Analysis**: Uses Gemini 2.5 Pro to analyze momentum (past events) vs constraints (future events) vs intent (your goals)
 - **Confidence-Based Clarification**: Only asks questions when confidence is below 95%
 - **Interactive Planning**: Streamlit UI for conversational planning experience
+- **Calendar Integration**: Add approved schedule items directly to Google Calendar with rich metadata
+- **Structured Scheduling**: JSON-based schedule output with time blocks, priorities, and energy levels
 - **LangGraph State Machine**: Robust workflow orchestration with conditional routing
 
 ## Architecture
@@ -19,7 +21,11 @@ Gather Context → Strategist → Check Confidence → [Ask Clarification OR Pla
                                     ↓                        ↓
                                   < 0.95                  >= 0.95
                                     ↓                        ↓
-                              Loop Back                 Final Schedule
+                              Loop Back              Generate Schedule
+                                                            ↓
+                                                    User Approves Events
+                                                            ↓
+                                                    Add to Calendar
 ```
 
 ### Nodes
@@ -28,14 +34,15 @@ Gather Context → Strategist → Check Confidence → [Ask Clarification OR Pla
 2. **strategist**: Analyzes context with Gemini 2.5 Pro, outputs confidence score
 3. **check_confidence**: Routes based on 0.95 threshold
 4. **ask_clarification**: Generates specific question using Gemini 2.0 Flash
-5. **planner**: Creates final Markdown schedule with Gemini 2.5 Pro
+5. **planner**: Creates structured JSON schedule with Gemini 2.5 Pro, including time blocks with priorities, energy levels, and rationale
+6. **add_approved_events**: Adds user-selected events to Google Calendar with rich metadata
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.10+
-- Google Cloud Project with Calendar API enabled
+- Python 3.12+
+- Google Cloud Project with Calendar API enabled (read/write access)
 - Todoist API access
 - Google Gemini API key
 
@@ -53,8 +60,9 @@ Gather Context → Strategist → Check Confidence → [Ask Clarification OR Pla
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Create a new project or select existing
    - Enable Google Calendar API
-   - Create OAuth 2.0 credentials (Desktop App)
+   - Create OAuth 2.0 credentials (Desktop App or Web App)
    - Download `credentials.json` to project root
+   - **Important**: Ensure the OAuth scope includes calendar write permissions
 
 3. **Get Todoist API Token**:
 
@@ -108,6 +116,14 @@ Navigate to `http://localhost:8501` and start planning:
 - "Help me plan tomorrow focusing on deep work"
 - "I need to prepare for my presentation next week"
 - "Balance my workload for the next 3 days"
+
+**Workflow:**
+
+1. Enter your planning request
+2. Agent gathers context and analyzes your schedule
+3. Review the generated schedule with time blocks
+4. Select which events to add to your calendar
+5. Events are added with full metadata (priority, energy level, rationale)
 
 ### Command Line Testing
 
@@ -174,9 +190,17 @@ daily-planner-agent/
 
 **Planner** (Gemini 2.5 Pro):
 
-- Creates detailed Markdown schedule
-- Balances energy, respects constraints
-- Aligns with user intent
+- Creates structured JSON schedule with time blocks
+- Each block includes: title, time range, priority, type, energy level, cognitive load, tags, and rationale
+- Balances energy, respects constraints, aligns with user intent
+- Automatically generates event suggestions from schedule
+
+**Calendar Integration**:
+
+- Converts schedule blocks to calendar event suggestions
+- User selects which events to add
+- Events added with rich metadata in description
+- Calendar context refreshed after additions
 
 ## Customization
 
