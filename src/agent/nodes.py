@@ -9,7 +9,6 @@ from .prompts import (
     STRATEGIST_PROMPT,
     CLARIFICATION_PROMPT,
     PLANNER_PROMPT,
-    SUGGEST_EVENTS_PROMPT,
 )
 from ..config.settings import (
     GOOGLE_API_KEY,
@@ -199,7 +198,7 @@ def ask_clarification(state: AgentState) -> AgentState:
 
 
 def planner(state: AgentState) -> AgentState:
-    """Node: Generate final schedule as structured JSON."""
+    """Node: Generate final schedule as structured JSON and create event suggestions."""
     cycle = state.get("cycle_count", 1)
     print(f"📅 Generating final schedule... (Cycle {cycle})")
 
@@ -262,13 +261,20 @@ def planner(state: AgentState) -> AgentState:
         schedule_json = []
         metadata = {}
 
+    # Generate event suggestions directly from schedule JSON
+    from .utils import convert_schedule_to_events
+
+    suggested_events = convert_schedule_to_events(schedule_json)
+    print(f"   Generated {len(suggested_events)} event suggestions from schedule")
+
     # Store the full structured data
-    # We'll generate a user-friendly message later in the UI
     if cycle == 1:
         return {
             **state,
             "schedule_json": schedule_json,
             "schedule_metadata": metadata,
+            "suggested_events": suggested_events,
+            "pending_calendar_additions": len(suggested_events) > 0,
             "final_schedule": "",  # No longer using markdown
         }
     else:
@@ -277,79 +283,10 @@ def planner(state: AgentState) -> AgentState:
             **state,
             "schedule_json": schedule_json,
             "schedule_metadata": metadata,
+            "suggested_events": suggested_events,
+            "pending_calendar_additions": len(suggested_events) > 0,
             "final_schedule": "",
         }
-
-
-def suggest_events(state: AgentState) -> AgentState:
-    """Node: Generate event suggestions from scheduled time blocks."""
-    print("💡 Generating event suggestions from schedule...")
-
-    schedule_json = state.get("schedule_json", [])
-
-    # If no schedule JSON, return empty suggestions
-    if not schedule_json:
-        print("   No schedule JSON available, skipping suggestions")
-        return {
-            **state,
-            "suggested_events": [],
-            "pending_calendar_additions": False,
-        }
-
-    llm = ChatGoogleGenerativeAI(model=PLANNER_MODEL, api_key=GOOGLE_API_KEY)
-
-    # Convert schedule_json to string for prompt
-    import json as json_module
-
-    schedule_json_str = json_module.dumps(schedule_json, indent=2)
-
-    prompt = SUGGEST_EVENTS_PROMPT.format(
-        schedule_json=schedule_json_str,
-        calendar_context=state["calendar_context"],
-        user_intent=state["user_intent"],
-    )
-
-    response = llm.invoke([HumanMessage(content=prompt)])
-
-    print("📝 Raw suggest_events response (first 500 chars):")
-    print(f"   {response.content[:500]}")
-
-    try:
-        # Try to extract JSON from markdown code blocks if present
-        content = response.content.strip()
-        if content.startswith("```"):
-            # Extract JSON from code block
-            lines = content.split("\n")
-            json_lines = []
-            in_code_block = False
-            for line in lines:
-                if line.startswith("```"):
-                    in_code_block = not in_code_block
-                    continue
-                if in_code_block:
-                    json_lines.append(line)
-            content = "\n".join(json_lines)
-            print(f"   Extracted from code block: {content[:200]}")
-
-        suggested_events = json.loads(content)
-
-        if not isinstance(suggested_events, list):
-            print("⚠️  Response is not a list, wrapping in array")
-            suggested_events = []
-
-        print(f"✅ Successfully parsed {len(suggested_events)} event suggestions")
-
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"⚠️  Error parsing suggest_events response: {e}")
-        print("   Full response content:")
-        print(f"   {response.content}")
-        suggested_events = []
-
-    return {
-        **state,
-        "suggested_events": suggested_events,
-        "pending_calendar_additions": len(suggested_events) > 0,
-    }
 
 
 def add_approved_events(state: AgentState) -> AgentState:

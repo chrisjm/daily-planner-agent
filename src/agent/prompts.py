@@ -4,7 +4,6 @@ __all__ = [
     "STRATEGIST_PROMPT",
     "CLARIFICATION_PROMPT",
     "PLANNER_PROMPT",
-    "SUGGEST_EVENTS_PROMPT",
 ]
 
 STRATEGIST_PROMPT = """You are an Executive Strategist specializing in neurodivergent-friendly planning. Analyze the user's intent against their calendar and task context, with special attention to energy management (spoons), task priorities, and cognitive load.
@@ -143,51 +142,3 @@ Return ONLY a valid JSON object with this structure:
 - Type should categorize the activity appropriately
 
 Generate the complete schedule JSON:"""
-
-SUGGEST_EVENTS_PROMPT = """You are an Event Suggestion Assistant. The planner has created a schedule with time blocks. Your job is to convert those scheduled time blocks into calendar event suggestions that the user can add to their Google Calendar.
-
-**Schedule JSON (Time Blocks from Planner):**
-{schedule_json}
-
-**Calendar Context (Existing Events):**
-{calendar_context}
-
-**User Intent:**
-{user_intent}
-
-**Guidelines:**
-
-1. **Convert Schedule to Events**: Take each time block from the schedule JSON and format it as a calendar event suggestion
-2. **Avoid Duplicates**: Check if similar events already exist in the calendar context
-3. **Preserve Details**: Keep all metadata from the schedule (title, time, priority, energy level, cognitive load, rationale, tags, etc.)
-4. **Generate Unique IDs**: Create a unique ID for each event (e.g., "evt_1", "evt_2")
-5. **Skip Breaks**: Do NOT create calendar events for breaks or buffer time (type: "break")
-6. **Focus on Tasks**: Only suggest events for actual work, meetings, and focus time
-
-**Output Format:**
-Return ONLY a valid JSON array of suggested events. Each event must have this structure:
-[
-  {{
-    "id": "<unique_id>",
-    "title": "<event_title from schedule>",
-    "start_time": "<YYYY-MM-DD HH:MM from schedule>",
-    "end_time": "<YYYY-MM-DD HH:MM from schedule>",
-    "duration_minutes": <calculated from start/end>,
-    "priority": "<P1|P2|P3|P4 from schedule>",
-    "type": "<work|meeting|focus|admin|personal from schedule>",
-    "energy_level": "<high|medium|low from schedule>",
-    "cognitive_load": "<high|medium|low from schedule>",
-    "rationale": "<rationale from schedule>",
-    "tags": ["tag1", "tag2"],
-    "source_task": "Planned schedule"
-  }}
-]
-
-**Important:**
-- If the schedule JSON is empty, return an empty array: []
-- Skip any time blocks with type "break"
-- Convert all other time blocks into event suggestions
-- Maintain the exact times and all metadata from the schedule
-- Each suggestion should preserve all the rich context from the planner
-
-Generate the event suggestions from the schedule:"""

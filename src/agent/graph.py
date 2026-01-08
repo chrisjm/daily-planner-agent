@@ -10,7 +10,6 @@ from .nodes import (
     check_confidence,
     ask_clarification,
     planner,
-    suggest_events,
     add_approved_events,
 )
 
@@ -24,7 +23,6 @@ def create_graph():
     workflow.add_node("strategist", strategist)
     workflow.add_node("ask_clarification", ask_clarification)
     workflow.add_node("planner", planner)
-    workflow.add_node("suggest_events", suggest_events)
     workflow.add_node("add_approved_events", add_approved_events)
 
     # Set entry point
@@ -40,12 +38,9 @@ def create_graph():
         {"ask_clarification": "ask_clarification", "planner": "planner"},
     )
 
-    # After planner, suggest events
-    workflow.add_edge("planner", "suggest_events")
-
     # Terminal edges
+    workflow.add_edge("planner", END)
     workflow.add_edge("ask_clarification", END)
-    workflow.add_edge("suggest_events", END)
     workflow.add_edge("add_approved_events", END)
 
     # Add memory checkpointer to preserve state across cycles
