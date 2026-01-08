@@ -23,7 +23,7 @@ TODOIST_API_KEY = os.getenv("TODOIST_API_KEY")
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # Google Calendar OAuth
-CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 TOKEN_PICKLE_PATH = "token.pickle"
 OAUTH_REDIRECT_PORT = 8080  # Fixed port for Web Application credentials
 

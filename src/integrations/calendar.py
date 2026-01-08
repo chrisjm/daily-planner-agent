@@ -29,6 +29,19 @@ _logger = IntegrationLogger("calendar")
 _validator = IntegrationValidator("calendar")
 
 
+def get_calendar_timezone():
+    """Get the timezone of the primary Google Calendar."""
+    try:
+        service = get_google_calendar_service()
+        calendar = service.calendars().get(calendarId="primary").execute()
+        timezone = calendar.get("timeZone", "UTC")
+        _logger.debug(f"Calendar timezone: {timezone}")
+        return timezone
+    except Exception as e:
+        _logger.warning(f"Could not get calendar timezone, defaulting to UTC: {e}")
+        return "UTC"
+
+
 def get_google_calendar_service():
     """Authenticate and return Google Calendar service."""
     _logger.info("Initializing Google Calendar service")
@@ -294,3 +307,95 @@ def get_calendar_events(
             error=str(e),
         )
         return f"Error fetching calendar events: {str(e)}"
+
+
+@observe_integration("calendar")
+def add_calendar_event(event_data: dict) -> dict:
+    """
+    Add a single event to Google Calendar.
+
+    Args:
+        event_data: Dictionary with keys:
+            - title: Event title
+            - start_time: Start time in "YYYY-MM-DD HH:MM" format
+            - end_time: End time in "YYYY-MM-DD HH:MM" format
+            - description: Optional event description
+
+    Returns:
+        Dictionary with:
+            - success: Boolean indicating if event was added
+            - event_id: Google Calendar event ID if successful
+            - error: Error message if failed
+    """
+    try:
+        service = get_google_calendar_service()
+
+        # Get the calendar's timezone
+        calendar_tz = get_calendar_timezone()
+
+        # Parse datetime strings and make timezone-aware
+        from datetime import datetime
+        import pytz
+
+        start_dt = datetime.strptime(event_data["start_time"], "%Y-%m-%d %H:%M")
+        end_dt = datetime.strptime(event_data["end_time"], "%Y-%m-%d %H:%M")
+
+        # Localize to calendar timezone
+        tz = pytz.timezone(calendar_tz)
+        start_dt = tz.localize(start_dt)
+        end_dt = tz.localize(end_dt)
+
+        # Build event object for Google Calendar API
+        event = {
+            "summary": event_data["title"],
+            "start": {
+                "dateTime": start_dt.isoformat(),
+                "timeZone": calendar_tz,
+            },
+            "end": {
+                "dateTime": end_dt.isoformat(),
+                "timeZone": calendar_tz,
+            },
+        }
+
+        # Add description if provided
+        if event_data.get("description"):
+            event["description"] = event_data["description"]
+
+        _logger.info(
+            "Adding event to calendar",
+            title=event_data["title"],
+            start_time=event_data["start_time"],
+            end_time=event_data["end_time"],
+        )
+
+        # Insert event into calendar
+        created_event = (
+            service.events().insert(calendarId="primary", body=event).execute()
+        )
+
+        event_id = created_event.get("id")
+        _logger.info(
+            "Event added successfully",
+            event_id=event_id,
+            title=event_data["title"],
+        )
+
+        return {
+            "success": True,
+            "event_id": event_id,
+            "error": None,
+        }
+
+    except Exception as e:
+        _logger.error(
+            "Error adding calendar event",
+            error_type=type(e).__name__,
+            error=str(e),
+            event_data=event_data,
+        )
+        return {
+            "success": False,
+            "event_id": None,
+            "error": str(e),
+        }
