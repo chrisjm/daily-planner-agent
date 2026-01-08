@@ -14,4 +14,5 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "streamlit>=1.52.2",
     "todoist-api-python>=3.1.0",
+    "watchdog>=6.0.0",
 ]
