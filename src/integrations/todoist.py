@@ -107,38 +107,50 @@ def get_todoist_tasks() -> str:
                     task_str += f" | {desc_preview}"
 
                 # Add due date info
-                if task.due:
-                    # Validate datetime parsing
-                    datetime_validation = _validator.validate_datetime_parsing(
-                        task.due.date
-                    )
-                    if not datetime_validation.valid:
-                        _logger.error(
-                            "Failed to parse task due date",
+                if task.due and task.due.date:
+                    try:
+                        # Validate datetime parsing
+                        datetime_validation = _validator.validate_datetime_parsing(
+                            task.due.date
+                        )
+                        if not datetime_validation.valid:
+                            _logger.warning(
+                                "Failed to parse task due date",
+                                task_index=idx,
+                                task_id=task.id,
+                                due_date_value=task.due.date,
+                                errors=datetime_validation.errors,
+                            )
+                            task_str += " [Invalid due date]"
+                            backlog_tasks.append(task_str)
+                            continue
+
+                        due_date = datetime.fromisoformat(task.due.date).date()
+                        days_until = (due_date - today).days
+
+                        if days_until < 0:
+                            task_str += f" [⚠️ OVERDUE by {abs(days_until)} days]"
+                        elif days_until == 0:
+                            task_str += " [📅 Due TODAY]"
+                        else:
+                            task_str += f" [Due: {task.due.date}]"
+
+                        if due_date <= today:
+                            urgent_tasks.append(task_str)
+                        else:
+                            backlog_tasks.append(task_str)
+                    except (ValueError, AttributeError) as e:
+                        _logger.warning(
+                            "Error parsing task due date",
                             task_index=idx,
                             task_id=task.id,
-                            due_date_value=task.due.date,
-                            errors=datetime_validation.errors,
+                            due_date_value=getattr(task.due, "date", None),
+                            error=str(e),
                         )
                         task_str += " [Invalid due date]"
                         backlog_tasks.append(task_str)
-                        continue
-
-                    due_date = datetime.fromisoformat(task.due.date).date()
-                    days_until = (due_date - today).days
-
-                    if days_until < 0:
-                        task_str += f" [⚠️ OVERDUE by {abs(days_until)} days]"
-                    elif days_until == 0:
-                        task_str += " [📅 Due TODAY]"
-                    else:
-                        task_str += f" [Due: {task.due.date}]"
-
-                    if due_date <= today:
-                        urgent_tasks.append(task_str)
-                    else:
-                        backlog_tasks.append(task_str)
                 else:
+                    # No due date or due.date is None
                     task_str += " [No due date]"
                     backlog_tasks.append(task_str)
 
